@@ -11,7 +11,17 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - An M-VAVE FM-1 we're willing to flash. Before any write, we have the recovery path ready (see "Recovery" below).
 - Later: Fruit Jam port. Optional: 2.4" FeatherWing support behind the same display abstraction.
 
-## Phase 0: Desk work on CPython, no hardware
+## Phase 0 findings (2026-10-22)
+
+- **Two install routes.** `WebUpdate.js` covers only FM1 Open firmwares: the `FM1_OFFICIAL_OPEN`, `FM1_COMMUNITY_n`, and `FM-1_8nnnnnn` identities, which have a `build_id` and support cmd 49 and cmd 50. All 84 firmwares in the Firmware Hub catalogue are `FM-1_<n>` firmwares that the hub installs another way. Felucca, SLOOP, and their forks don't answer cmd 49, publish no `build_id`, and ship their own loader. That loader reports a hard-coded `ota-FM-1_9xx`, not `ota-FM1C_…`. The flasher implements both routes. `meta.json` `kind` is `open`, `stock`, or `community`.
+- **The community route is the hub's.** Send the kick, wait 2 s, then serve stage 1 with 10 ms between blocks. Wait 3 s, then wait for an `ota-FM-1_9xx` loader. Firmwares the hub lists with `loader: "mvave"`, such as Bubba, use the vendor `ota-FM-1_015` instead. Then serve stage 2 and verify the identity only, because these firmwares have no build hash. The device resumes only into the loader the package expects, since another firmware's loader may lay out flash differently. Leaving stock V15 still needs the extra confirmation.
+- **Trimmed packages.** Felucca-family packages trim the 32-byte alignment padding from the trailing `ota.bin`, so its `stored` length runs past the end of the file, and `WebUpdate.js` rejects them. `inspect(strict=False)` accepts exactly that case. All 84 hub packages parse, and all 84 complete a simulated install.
+- **Hub catalogue.** https://thefirmwarehub.com/catalog.json is updated nightly and is CORS-open. Entries have `id`, `name`, `author`, `version`, `product`, `pkg`, `size`, `sha256`, `source`/`release`, `loader`, and `kind` (a genre). They have no license, `build_id`, or `loader_sha256`; `make_sd.py` computes `loader_sha256`.
+- **USB.** The Felucca/SLOOP app is 1209:0001 and their loader is 1209:**0002**, so the PID changes when the device re-enumerates. Stock V15 and vendor-loader VID/PIDs are unknown; Phase 1 reads them from the real device.
+- **Progress.** Measured against the bytes each stage reads (header, table, and loader or flash entry), not the whole image, so the bar doesn't stall near 86%.
+- **Recovery.** In the hub's error text: hold OCT− while powering on to start the update loader manually. The rescue key `F0 22 24 35 7D F7` drops the device into the ROM UBOOT bootloader.
+
+## Phase 0: Desk work on CPython, no hardware (done)
 
 1. Clone `m-vave/fm1_open` at `4c7496daac04a95ff10d1afdcc8f9ead2dbabc41` into `ref/` (gitignored) and read all of `sdk/WebUpdate.js`, especially retries, receive-queue behavior, and the checks in `connect()` and `prepare()`.
 2. `lib/fm1proto.py`: one module that runs on both CPython and CircuitPython. Contains `crc16`, `decode_header`, `pack7`/`unpack7`, frame build and parse, `inspect_package`, the image-to-file offset mapping, and a streaming `PackageReader` that caches only `image[0:940]`.
@@ -23,6 +33,8 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 ## Phase 1: Reference flasher on desktop
 
 - `tools/flash_cli.py` (`python-rtmidi` or `mido`) runs the full install sequence against the real FM-1. This proves the protocol, mode selection, and re-enumeration timing on hardware that's easy to debug.
+- Before flashing: record the device's identity and its USB VID/PID in app mode and loader mode, and log every read request's address and length. The simulator's read pattern (header, table, then loader or flash entry) is a guess.
+- First flash: stock V15 to a community firmware, then back to stock (voice-bank restore).
 
 ## Phase 2: Hardware spikes on the Feather
 
@@ -59,10 +71,11 @@ Before the first real flash in Phase 1:
 
 ```
 lib/fm1proto.py      # protocol + package parsing (CPython and CircuitPython)
+lib/fm1update.py     # install state machine over a transport (CPython and CircuitPython)
 lib/fm1usb.py        # USB-MIDI host transport (CircuitPython)
 lib/ui/              # display/touch abstraction and screens
 code.py              # device entry point
-tools/               # make_sd.py, flash_cli.py, fake_fm1.py
+tools/               # make_sd.py, flash_cli.py, fake_fm1.py (simulated FM-1)
 tests/               # CPython unit tests
 ref/                 # upstream reference clones (gitignored)
 ```
