@@ -43,6 +43,12 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - The loader re-enumerated as `ota-FM-1_900` and macOS/rtmidi saw it right away. The SLOOP app's MIDI port is named "Felucca".
 - Read pattern: stage 1 sends 23 requests (0x0–0x600, one block at 0x4400, then the loader entry); stage 2 sends 1180 requests covering 0x0–0x93400 in order. Request sizes are 512, 32, the loader's tail, and 8 for the finish. The simulator now plays this pattern.
 
+### Back to stock: SLOOP 2.8 to V15, 2026-10-22
+
+- Took 33 s with `flash_cli.py install sd_out/firmware/stock-v15 --force` on the legacy route with hub timing. The vendor loader re-enumerated as `ota-FM-1_015` and was found in under 1 s, on a port name our filter already matched. The 36 factory voice-bank writes were all acknowledged in 0.6 s. The log is `logs/install-20261022-214957-FM-1_015.jsonl`.
+- Read patterns differ by updater. SLOOP's stage 1 for the V15 package read 0x0–0x4400 and the vendor loader (0xA5F00–0xAAD01). The vendor loader's stage 2 read 0x0–0x600, then 0x4400–0x93400, skipping image 0x600–0x4400. Image address = flash address + 0x400 (the flash entry's offset), so loaders never request the boot head (flash 0x0000–0x3FFF). They write only the app area, as the rescue tools assume.
+- **Phase 1 is complete:** both directions work on real hardware.
+
 ### Rescue path: tested 2026-10-22
 
 - **A Raspberry Pi Pico (RP2040) works as an FM-1 Transporter from macOS.** Build kurogedelic/FM-1-transporter @ `a632d92` with `-DPICO_BOARD=pico` (pico-sdk 2.2.0, Arm GNU Toolchain 15.3), embedding jl-uboot-tool @ `adb3f18` `wl82loader.bin` (sha256 `d41da612…`). Wiring: GP0 to D+, GP1 to D−, GND to GND, with 5 V not connected. Drive it with MvaveFM1Unbricker @ `707470a` `fm1_transporter_recover.py` (`info`, `dump`, and `recover PACKAGE`). The sources are in `ref/` (gitignored).
