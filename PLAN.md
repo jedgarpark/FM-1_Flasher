@@ -63,6 +63,13 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - Check whether CircuitPython has `hashlib` with sha256.
 - Milestone: send cmd 17 to the FM-1 with `usb.core` and print the identity. Try `adafruit_usb_host_midi` first, and fall back to hand-built USB-MIDI 1.0 packets if long SysEx breaks.
 
+### Phase 2 findings (2026-10-22)
+
+- **`hashlib`:** CircuitPython 11.0.0-alpha.0 on the Feather RP2040 USB Host has it, but only as `hashlib.new("sha256")`. `fm1proto.sha256()` handles both forms.
+- **5 V on the USB-A port:** with the Feather on USB power, the FM-1 shows its charging icon, so 5 V reaches it. CircuitPython's board setup claims `USB_HOST_5V_POWER` ("in use"). Battery operation is still untested.
+- **Blocker: stock V15 never enumerates on the Feather.** Its configuration descriptor is 293 bytes (5 interfaces: UAC1 audio control, iso out, iso in, and MIDI streaming on interface 4 with bulk 0x84/0x04, 64 B). CircuitPython sets `CFG_TUH_ENUMERATION_BUFSIZE` to 284 + 4 = 288 (`supervisor/shared/usb/tusb_config.h`), and TinyUSB aborts enumeration when `wTotalLength` exceeds it. The fix is a larger buffer. That define is `#ifndef`-guarded, so a board build can override it. Felucca-family firmwares are MIDI-only and should fit, but stock V15 is the main starting point, so the flasher needs the fix.
+- **USB-MIDI transport:** `adafruit_usb_host_midi` has no `write()` and loses SysEx boundaries, so `lib/fm1usb.py` implements USB-MIDI 1.0 SysEx packetizing and reassembly on `usb.core`.
+
 ## Phase 3: Install path on device
 
 - cmd 49, then arm, then the stage 1 serve loop streamed from SD, then re-enumeration (release, poll, reclaim, re-probe), then stage 2, then verify. Uses the same `fm1proto.py` that was tested against the simulator.

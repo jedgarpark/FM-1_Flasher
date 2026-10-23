@@ -116,6 +116,10 @@ def sha256():
     try:
         return hashlib.sha256()
     except (AttributeError, ValueError):
+        pass
+    try:
+        return hashlib.new("sha256")  # CircuitPython's hashlib has only new()
+    except (AttributeError, ValueError):
         return None
 
 

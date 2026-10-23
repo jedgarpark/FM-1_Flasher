@@ -1,0 +1,162 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""USB-MIDI host transport for fm1update on CircuitPython (usb.core).
+
+Finds MIDI streaming interfaces (class 1, subclass 3) on the USB host port,
+sends SysEx as USB-MIDI 1.0 event packets on cable 0, and reassembles
+incoming SysEx. Same interface as the desktop RtMidiTransport:
+send(sysex), recv(timeout_ms), lost, close().
+"""
+
+import time
+
+import adafruit_usb_host_descriptors as D
+import usb.core
+
+# Code index numbers (USB MIDI 1.0, table 4-1)
+CIN_SYSEX = 0x4  # SysEx start or continue, 3 bytes
+CIN_END1 = 0x5  # SysEx ends with 1 byte (or a single-byte system common)
+CIN_END2 = 0x6
+CIN_END3 = 0x7
+
+
+def _ticks_ms():
+    return time.monotonic_ns() // 1000000
+
+
+def midi_endpoints(device):
+    """(interface, in_ep, out_ep, in_packet_size) of the first MIDI streaming
+    interface with both bulk endpoints, or None."""
+    cfg = D.get_configuration_descriptor(device, 0)
+    i = 0
+    midi = False
+    iface = in_ep = out_ep = None
+    size = 64
+    while i < len(cfg):
+        length, kind = cfg[i], cfg[i + 1]
+        if length == 0:
+            break
+        if kind == D.DESC_INTERFACE:
+            if midi and in_ep and out_ep:
+                break
+            midi = cfg[i + 5] == 1 and cfg[i + 6] == 3
+            if midi:
+                iface = cfg[i + 2]
+                in_ep = out_ep = None
+        elif kind == D.DESC_ENDPOINT and midi:
+            addr = cfg[i + 2]
+            if cfg[i + 3] & 3 == 2:  # bulk
+                if addr & 0x80:
+                    in_ep = addr
+                    size = cfg[i + 4] | (cfg[i + 5] << 8)
+                else:
+                    out_ep = addr
+        i += length
+    if midi and in_ep and out_ep:
+        return iface, in_ep, out_ep, size
+    return None
+
+
+def encode_sysex(msg):
+    """USB-MIDI event packets (cable 0) for one complete F0..F7 message."""
+    n = len(msg)
+    out = bytearray(((n + 2) // 3) * 4)
+    o = 0
+    i = 0
+    while i < n:
+        left = n - i
+        if left > 3:
+            cin, k = CIN_SYSEX, 3
+        else:
+            cin, k = (CIN_END1, CIN_END2, CIN_END3)[left - 1], left
+        out[o] = cin
+        out[o + 1:o + 1 + k] = msg[i:i + k]
+        o += 4
+        i += k
+    return out
+
+
+class USBMidiTransport:
+    def __init__(self, device, endpoints, log=None):
+        self.device = device
+        self.iface, self.in_ep, self.out_ep, size = endpoints
+        self.buf = bytearray(max(size, 4))
+        self.partial = bytearray()
+        self.inbox = []
+        self.log = log
+        self.closed = False
+        self._lost = False
+        device.set_configuration()
+        try:
+            device.detach_kernel_driver(self.iface)
+        except (usb.core.USBError, NotImplementedError):
+            pass
+
+    @property
+    def lost(self):
+        return self.closed or self._lost
+
+    def send(self, sysex):
+        if self.log:
+            self.log("->", sysex)
+        data = encode_sysex(sysex)
+        try:
+            self.device.write(self.out_ep, data, 1000)
+        except usb.core.USBError:
+            self._lost = True
+            raise
+
+    def _decode(self, n):
+        for i in range(0, n - 3, 4):
+            cin = self.buf[i] & 0xF
+            if cin == CIN_SYSEX:
+                if self.buf[i + 1] == 0xF0:
+                    self.partial = bytearray()
+                self.partial.extend(self.buf[i + 1:i + 4])
+            elif cin in (CIN_END1, CIN_END2, CIN_END3) and self.partial:
+                self.partial.extend(self.buf[i + 1:i + 1 + cin - 4])
+                if self.partial[-1] == 0xF7:
+                    msg = bytes(self.partial)
+                    if self.log:
+                        self.log("<-", msg)
+                    self.inbox.append(msg)
+                self.partial = bytearray()
+            # Anything else (notes, clock, ...) is ignored.
+
+    def recv(self, timeout_ms):
+        if self.inbox:
+            return self.inbox.pop(0)
+        if self.lost:
+            return None
+        end = _ticks_ms() + timeout_ms
+        while True:
+            try:
+                n = self.device.read(self.in_ep, self.buf, max(1, min(50, end - _ticks_ms())))
+                self._decode(n)
+            except usb.core.USBTimeoutError:
+                pass
+            except usb.core.USBError:
+                self._lost = True
+                return None
+            if self.inbox:
+                return self.inbox.pop(0)
+            if _ticks_ms() >= end:
+                return None
+
+    def close(self):
+        self.closed = True
+
+
+def finder(log=None):
+    """A finder for fm1update.Updater: one transport per attached device with
+    a MIDI streaming interface."""
+    def find():
+        found = []
+        for dev in usb.core.find(find_all=True):
+            try:
+                ep = midi_endpoints(dev)
+                if ep:
+                    found.append(USBMidiTransport(dev, ep, log))
+            except usb.core.USBError:
+                pass
+        return found
+    return find
