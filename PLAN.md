@@ -37,6 +37,12 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - Before flashing: record the device's identity and its USB VID/PID in app mode and loader mode, and log every read request's address and length. The simulator's read pattern (header, table, then loader or flash entry) is a guess.
 - First flash: stock V15 to a community firmware, then back to stock (voice-bank restore).
 
+### First real install: stock V15 to SLOOP 2.8, 2026-10-22
+
+- Took 43 s with `flash_cli.py install sd_out/firmware/sloop --force`: about 3 s for stage 1, 3 s to restart, 34 s for stage 2, and 3 s to verify. The log is `logs/install-20261022-214440-FM-1_900.jsonl`.
+- The loader re-enumerated as `ota-FM-1_900` and macOS/rtmidi saw it right away. The SLOOP app's MIDI port is named "Felucca".
+- Read pattern: stage 1 sends 23 requests (0x0–0x600, one block at 0x4400, then the loader entry); stage 2 sends 1180 requests covering 0x0–0x93400 in order. Request sizes are 512, 32, the loader's tail, and 8 for the finish. The simulator now plays this pattern.
+
 ### Rescue path: tested 2026-10-22
 
 - **A Raspberry Pi Pico (RP2040) works as an FM-1 Transporter from macOS.** Build kurogedelic/FM-1-transporter @ `a632d92` with `-DPICO_BOARD=pico` (pico-sdk 2.2.0, Arm GNU Toolchain 15.3), embedding jl-uboot-tool @ `adb3f18` `wl82loader.bin` (sha256 `d41da612…`). Wiring: GP0 to D+, GP1 to D−, GND to GND, with 5 V not connected. Drive it with MvaveFM1Unbricker @ `707470a` `fm1_transporter_recover.py` (`info`, `dump`, and `recover PACKAGE`). The sources are in `ref/` (gitignored).

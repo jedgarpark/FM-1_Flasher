@@ -99,6 +99,9 @@ class Updater:
         self.force = False
         self.family = None
         self.community = meta.get("kind") == "community"
+        # Hub timing (kick wait, pacing) whenever a community package or a
+        # community firmware's own updater is involved.
+        self.hub_timing = self.community
         self.trace = None
 
     # -- discovery ------------------------------------------------------------
@@ -147,6 +150,7 @@ class Updater:
         check(device is not None, "no FM-1 answered; power it on and reconnect USB")
         self.link, self.identity = device
         ident = self.identity
+        self.hub_timing = self.community or (P.community_identity(ident) and ident != P.STOCK_PRODUCT)
         try:
             if self.community:
                 return self._connect_community(ident, force)
@@ -259,7 +263,7 @@ class Updater:
         buf = bytearray(512)
         started = last = self.clock.now_ms()
         link = self.link
-        pace = self.timing["pace"] if self.community else 0
+        pace = self.timing["pace"] if self.hub_timing else 0
         while True:
             now = self.clock.now_ms()
             check(now - started < max(idle * 3, 120000), "update took too long")
@@ -378,6 +382,8 @@ class Updater:
                     check(ack == b"\x00", "device refused this package")
                 self.status("Staging loader", 0)
                 self.link.send(P.KICK)
+                if self.hub_timing:
+                    self.clock.sleep_ms(self.timing["kick_wait"])
                 self.serve(P.FINISH_STAGE1, self.timing["idle"], "Staging loader")
                 self.disconnect()
                 self.status("Restarting", 0)

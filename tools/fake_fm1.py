@@ -70,14 +70,17 @@ class FakeFM1:
     # -- transfer plans ----------------------------------------------------
 
     def _plan(self, finish):
-        """Read requests for a stage: the header and table, then either the
-        loader entry (stage 1) or the whole flash entry (stage 2)."""
+        """Read requests for a stage."""
         if self.pkg.entries is None:
             self.pkg.inspect(verify=False, strict=False)
-        count = len(self.pkg.entries)
-        spans = [(0, 64 + count * 80)]
-        e = self.pkg.loader if finish == P.FINISH_STAGE1 else self.pkg.flash
-        spans.append((e["offset"], e["size"]))
+        # As logged from SLOOP 2.8's updater and loader (2026-10-22): stage 1
+        # reads the header, one app block, and the loader; stage 2 reads
+        # everything from 0 to the end of the flash entry.
+        f, ld = self.pkg.flash, self.pkg.loader
+        if finish == P.FINISH_STAGE1:
+            spans = [(0, 0x600), (f["offset"] + 0x4000, 0x200), (ld["offset"], ld["size"])]
+        else:
+            spans = [(0, f["offset"] + f["size"])]
         reqs = []
         for start, size in spans:
             for a in range(start, start + size, self.chunk):
