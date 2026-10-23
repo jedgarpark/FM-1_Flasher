@@ -81,7 +81,8 @@ class Link:
 
 
 class Updater:
-    """status(phase, percent) is called as the install progresses."""
+    """status(phase, percent) is called as the install progresses.
+    trace(event, *values), if set, sees every read request and stage change."""
 
     def __init__(self, finder, pkg, meta, status=None, timing=None, clock=None):
         self.finder = finder
@@ -98,6 +99,7 @@ class Updater:
         self.force = False
         self.family = None
         self.community = meta.get("kind") == "community"
+        self.trace = None
 
     # -- discovery ------------------------------------------------------------
 
@@ -212,6 +214,8 @@ class Updater:
     def wait_for(self, identity, legacy_loader=False):
         """Wait for a device whose identity is `identity` (a string, or a
         predicate taking the identity)."""
+        if self.trace:
+            self.trace("wait", identity if isinstance(identity, str) else "loader")
         match = identity if callable(identity) else (lambda s: s == identity)
         end = self.clock.now_ms() + self.timing["reconnect"]
         while self.clock.now_ms() < end:
@@ -223,6 +227,8 @@ class Updater:
                     raise
             if device is not None:
                 link, ident = device
+                if self.trace:
+                    self.trace("found", ident)
                 if match(ident) or (legacy_loader and P.is_loader(ident)):
                     self.link, self.identity = link, ident
                     return
@@ -267,6 +273,8 @@ class Updater:
             if req is None:
                 continue
             _, address, n = req
+            if self.trace:
+                self.trace("read", address, n)
             check(0 < n <= 512, "invalid request length")
             if address == P.FINISH_STAGE1 or address == P.FINISH_STAGE2:
                 if self.community and address != finish:

@@ -5,9 +5,15 @@ CircuitPython device, run from a computer where problems are easy to see.
 
   flash_cli.py ports                list MIDI ports and which ones would be probed
   flash_cli.py probe                identity (cmd 17) and capability (cmd 49); writes nothing
+  flash_cli.py install DIR          install the firmware in DIR (a make_sd.py folder:
+                                    meta.json + .fwsc); --dry-run connects and reports
+                                    the route without writing anything
+
+Every install writes a log of each read request to logs/install-*.jsonl.
 """
 
 import argparse
+import json
 import os
 import queue
 import re
@@ -157,12 +163,114 @@ def cmd_probe(args):
             link.close()
 
 
+def spans(reads):
+    """Coalesce (address, n) reads into contiguous [start, end) spans."""
+    out = []
+    for a, n in sorted(reads):
+        if out and a <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], a + n)
+        else:
+            out.append([a, a + n])
+    return out
+
+
+def cmd_install(args):
+    meta_path = os.path.join(args.dir, "meta.json") if os.path.isdir(args.dir) else args.dir
+    meta = json.load(open(meta_path))
+    f = open(os.path.join(os.path.dirname(meta_path), meta["file"]), "rb")
+    pkg, meta = P.prepare(meta, f, verify=True)
+    print("package:  %s %s (%s), %d bytes, %s route, loader %s" % (
+        meta.get("name", meta["product"]), meta.get("version", ""), meta["product"], meta["bytes"],
+        meta.get("kind"), meta["loader_identity"]))
+
+    os.makedirs(args.log_dir, exist_ok=True)
+    log_path = os.path.join(args.log_dir, "install-%s-%s.jsonl" % (time.strftime("%Y%m%d-%H%M%S"), meta["product"]))
+    logf = open(log_path, "w")
+    t0 = time.monotonic()
+    state = {"phase": None, "pct": -10, "reads": {}}
+
+    def record(event, *values):
+        logf.write(json.dumps({"t": round(time.monotonic() - t0, 3), "event": event, "values": values}) + "\n")
+        logf.flush()
+
+    def trace(event, *values):
+        record(event, *values)
+        if event == "read":
+            state["reads"].setdefault(state["phase"], []).append(values)
+        elif event == "found":
+            print("  found: %s" % values[0])
+
+    def status(phase, pct):
+        if phase != state["phase"]:
+            state["phase"] = phase
+            state["pct"] = -10
+            record("phase", phase)
+            print("%s ..." % phase)
+        if pct >= state["pct"] + 10 or pct == 100:
+            state["pct"] = pct
+            print("  %3d%%  (%.1f s)" % (pct, time.monotonic() - t0))
+
+    def finder():
+        found = []
+        for name, i, o in candidate_pairs():
+            try:
+                found.append(RtMidiTransport(name, i, o, make_log(args.verbose)))
+            except Exception as e:  # a port that vanished while re-enumerating
+                record("open-failed", name, str(e))
+        return found
+
+    up = U.Updater(finder, pkg, meta, status=status)
+    up.trace = trace
+    info = up.connect(force=args.force)
+    record("connect", info, up.mode)
+    print("device:   %s, mode: %s" % (info["identity"], up.mode))
+    if info.get("migration"):
+        up.disconnect()
+        sys.exit("this replaces %s with a different firmware family: rerun with --force to confirm"
+                 % info["identity"])
+    if info.get("same"):
+        print("note:     the device already runs %s" % meta["product"])
+    if args.dry_run:
+        up.disconnect()
+        print("dry run: nothing was sent beyond identity/capability queries")
+        return
+    if not args.yes:
+        print("Keep both devices powered until this finishes. Interrupting a write can leave the FM-1")
+        print("unbootable (rescue: the Pico Transporter, see PLAN.md).")
+        if input("Type INSTALL to write %s to the FM-1: " % meta["product"]).strip() != "INSTALL":
+            up.disconnect()
+            sys.exit("cancelled; nothing was written")
+    try:
+        up.install(force=args.force)
+    except P.FM1Error as e:
+        record("error", str(e))
+        print("FAILED: %s" % e)
+        print("log: %s" % log_path)
+        sys.exit(1)
+    finally:
+        for phase, reads in state["reads"].items():
+            sp = spans(reads)
+            sizes = sorted({n for _, n in reads})
+            record("summary", phase, len(reads), sp, sizes)
+            print("%s: %d requests, sizes %s, spans %s" % (
+                phase, len(reads), sizes, ", ".join("0x%x-0x%x" % (a, b) for a, b in sp)))
+        logf.close()
+    print("installed %s in %.0f s; log: %s" % (meta["product"], time.monotonic() - t0, log_path))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("-v", "--verbose", action="store_true", help="print every SysEx message")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ports").set_defaults(fn=cmd_ports)
     sub.add_parser("probe").set_defaults(fn=cmd_probe)
+    ins = sub.add_parser("install")
+    ins.add_argument("dir", help="firmware folder (meta.json + .fwsc) or a meta.json")
+    ins.add_argument("--dry-run", action="store_true", help="connect and report the route; write nothing")
+    ins.add_argument("--force", action="store_true", help="allow a migration (leaving stock, or another family)")
+    ins.add_argument("--yes", action="store_true", help="skip the typed confirmation")
+    ins.add_argument("--log-dir", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs"))
+    ins.set_defaults(fn=cmd_install)
     args = ap.parse_args(argv)
     args.fn(args)
 
