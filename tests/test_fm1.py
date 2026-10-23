@@ -313,6 +313,18 @@ class Install(unittest.TestCase):
         written = b"".join(d[8:] for c, d in dev.bank_writes if c == P.CMD_BANK_WRITE)
         self.assertEqual(written, pkg.factory_bank())
 
+    def test_community_back_to_stock(self):
+        pkg, meta = P.prepare(stock_meta(), io.BytesIO(stock_bytes()))
+        clock = FakeClock()
+        dev = FakeFM1(pkg, clock, identity="FM-1_900", capability=False)
+        up = U.Updater(finder_for(dev), pkg, meta, clock=clock)
+        self.assertTrue(up.connect()["migration"])
+        self.assertTrue(up.connect(force=True)["legacy"])
+        self.assertTrue(up.hub_timing)
+        up.install(force=True)
+        self.assertEqual(dev.identity, "FM-1_015")
+        self.assertEqual(len(dev.bank_writes), 36)
+
     def test_stock_on_stock_only_restores(self):
         pkg, meta = P.prepare(stock_meta(), io.BytesIO(stock_bytes()))
         clock = FakeClock()

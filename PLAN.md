@@ -17,7 +17,8 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - **The community route is the hub's.** Send the kick, wait 2 s, then serve stage 1 with 10 ms between blocks. Wait 3 s, then wait for an `ota-FM-1_9xx` loader. Firmwares the hub lists with `loader: "mvave"`, such as Bubba, use the vendor `ota-FM-1_015` instead. Then serve stage 2 and verify the identity only, because these firmwares have no build hash. The device resumes only into the loader the package expects, since another firmware's loader may lay out flash differently. Leaving stock V15 still needs the extra confirmation.
 - **Trimmed packages.** Felucca-family packages trim the 32-byte alignment padding from the trailing `ota.bin`, so its `stored` length runs past the end of the file, and `WebUpdate.js` rejects them. `inspect(strict=False)` accepts exactly that case. All 84 hub packages parse, and all 84 complete a simulated install.
 - **Hub catalogue.** https://thefirmwarehub.com/catalog.json is updated nightly and is CORS-open. Entries have `id`, `name`, `author`, `version`, `product`, `pkg`, `size`, `sha256`, `source`/`release`, `loader`, and `kind` (a genre). They have no license, `build_id`, or `loader_sha256`; `make_sd.py` computes `loader_sha256`.
-- **USB.** The Felucca/SLOOP app is 1209:0001 and their loader is 1209:**0002**, so the PID changes when the device re-enumerates. Stock V15 and vendor-loader VID/PIDs are unknown; Phase 1 reads them from the real device.
+- **USB (measured 2026-10-22).** Stock V15 is VID 0x4C4A (JieLi) / PID 0xC755, product "FM-1", full speed; on macOS its MIDI port is "USB Composite Device". It answers cmd 17 with `FM-1_015` and doesn't answer cmd 49.
+- **USB (from source).** The Felucca/SLOOP app is 1209:0001 and their loader is 1209:**0002**, so the PID changes when the device re-enumerates. Stock V15 and vendor-loader VID/PIDs are unknown; Phase 1 reads them from the real device.
 - **Progress.** Measured against the bytes each stage reads (header, table, and loader or flash entry), not the whole image, so the bar doesn't stall near 86%.
 - **Recovery.** In the hub's error text: hold OCT− while powering on to start the update loader manually. The rescue key `F0 22 24 35 7D F7` drops the device into the ROM UBOOT bootloader.
 
@@ -35,6 +36,25 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - `tools/flash_cli.py` (`python-rtmidi` or `mido`) runs the full install sequence against the real FM-1. This proves the protocol, mode selection, and re-enumeration timing on hardware that's easy to debug.
 - Before flashing: record the device's identity and its USB VID/PID in app mode and loader mode, and log every read request's address and length. The simulator's read pattern (header, table, then loader or flash entry) is a guess.
 - First flash: stock V15 to a community firmware, then back to stock (voice-bank restore).
+
+### First real install: stock V15 to SLOOP 2.8, 2026-10-22
+
+- Took 43 s with `flash_cli.py install sd_out/firmware/sloop --force`: about 3 s for stage 1, 3 s to restart, 34 s for stage 2, and 3 s to verify. The log is `logs/install-20261022-214440-FM-1_900.jsonl`.
+- The loader re-enumerated as `ota-FM-1_900` and macOS/rtmidi saw it right away. The SLOOP app's MIDI port is named "Felucca".
+- Read pattern: stage 1 sends 23 requests (0x0–0x600, one block at 0x4400, then the loader entry); stage 2 sends 1180 requests covering 0x0–0x93400 in order. Request sizes are 512, 32, the loader's tail, and 8 for the finish. The simulator now plays this pattern.
+
+### Back to stock: SLOOP 2.8 to V15, 2026-10-22
+
+- Took 33 s with `flash_cli.py install sd_out/firmware/stock-v15 --force` on the legacy route with hub timing. The vendor loader re-enumerated as `ota-FM-1_015` and was found in under 1 s, on a port name our filter already matched. The 36 factory voice-bank writes were all acknowledged in 0.6 s. The log is `logs/install-20261022-214957-FM-1_015.jsonl`.
+- Read patterns differ by updater. SLOOP's stage 1 for the V15 package read 0x0–0x4400 and the vendor loader (0xA5F00–0xAAD01). The vendor loader's stage 2 read 0x0–0x600, then 0x4400–0x93400, skipping image 0x600–0x4400. Image address = flash address + 0x400 (the flash entry's offset), so loaders never request the boot head (flash 0x0000–0x3FFF). They write only the app area, as the rescue tools assume.
+- **Phase 1 is complete:** both directions work on real hardware.
+
+### Rescue path: tested 2026-10-22
+
+- **A Raspberry Pi Pico (RP2040) works as an FM-1 Transporter from macOS.** Build kurogedelic/FM-1-transporter @ `a632d92` with `-DPICO_BOARD=pico` (pico-sdk 2.2.0, Arm GNU Toolchain 15.3), embedding jl-uboot-tool @ `adb3f18` `wl82loader.bin` (sha256 `d41da612…`). Wiring: GP0 to D+, GP1 to D−, GND to GND, with 5 V not connected. Drive it with MvaveFM1Unbricker @ `707470a` `fm1_transporter_recover.py` (`info`, `dump`, and `recover PACKAGE`). The sources are in `ref/` (gitignored).
+- **First run.** `info` can fail once with `uboot=0` because the status reply arrives during the Transporter's 6 s pulse phase. Run it again without power-cycling.
+- **Baseline dump** (stock V15, 2026-10-22): `ref/flash-dumps/fm1-transporter-dump-20261022-213229.bin`, sha256 `8a4d2330…`. The head and app match V15 exactly. Felucca settings objects left by earlier firmwares are at 0xFC000–0xFE000.
+- **The plain-cable tools** (`fm1_rescue.py`, `fm1_unbrick.py`) need SCSI pass-through, so they run on Linux or Windows only, not macOS.
 
 ## Phase 2: Hardware spikes on the Feather
 
