@@ -37,6 +37,13 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - Before flashing: record the device's identity and its USB VID/PID in app mode and loader mode, and log every read request's address and length. The simulator's read pattern (header, table, then loader or flash entry) is a guess.
 - First flash: stock V15 to a community firmware, then back to stock (voice-bank restore).
 
+### Rescue path: tested 2026-10-22
+
+- **A Raspberry Pi Pico (RP2040) works as an FM-1 Transporter from macOS.** Build kurogedelic/FM-1-transporter @ `a632d92` with `-DPICO_BOARD=pico` (pico-sdk 2.2.0, Arm GNU Toolchain 15.3), embedding jl-uboot-tool @ `adb3f18` `wl82loader.bin` (sha256 `d41da612…`). Wiring: GP0 to D+, GP1 to D−, GND to GND, with 5 V not connected. Drive it with MvaveFM1Unbricker @ `707470a` `fm1_transporter_recover.py` (`info`, `dump`, and `recover PACKAGE`). The sources are in `ref/` (gitignored).
+- **First run.** `info` can fail once with `uboot=0` because the status reply arrives during the Transporter's 6 s pulse phase. Run it again without power-cycling.
+- **Baseline dump** (stock V15, 2026-10-22): `ref/flash-dumps/fm1-transporter-dump-20261022-213229.bin`, sha256 `8a4d2330…`. The head and app match V15 exactly. Felucca settings objects left by earlier firmwares are at 0xFC000–0xFE000.
+- **The plain-cable tools** (`fm1_rescue.py`, `fm1_unbrick.py`) need SCSI pass-through, so they run on Linux or Windows only, not macOS.
+
 ## Phase 2: Hardware spikes on the Feather
 
 - Check whether the USB-A host port gets 5 V on LiPo. If it doesn't, add a 5 V boost converter.
