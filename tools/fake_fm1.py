@@ -24,7 +24,8 @@ class FakeClock:
 class FakeFM1:
     def __init__(self, pkg, clock, identity="FM1_OFFICIAL_OPEN", build="00" * 32, capability=True,
                  loader_identity="ota-FM-1_015", new_identity=None, new_build=None,
-                 reenum_ms=3000, duplicate_finish=1, noise=False, chunk=512):
+                 reenum_ms=3000, duplicate_finish=1, noise=False, chunk=512,
+                 lossy_over=None, lossy_modes=("app", "loader"), retry_ms=3000, retries=2):
         self.pkg = pkg
         self.clock = clock
         self.identity = identity
@@ -37,6 +38,16 @@ class FakeFM1:
         self.duplicate_finish = duplicate_finish
         self.noise = noise
         self.chunk = chunk
+        # Lossy link: host messages longer than lossy_over bytes are dropped until
+        # the transport has slowed down (as the MAX3421E lost bursts to SLOOP's
+        # loader). A request left unanswered is repeated every retry_ms, up to
+        # `retries` times; after that the device goes silent.
+        self.lossy_over = lossy_over
+        self.lossy_modes = lossy_modes
+        self.retry_ms = retry_ms
+        self.retries = retries
+        self.retries_left = retries
+        self.last_req_at = 0
         self.mode = "app"
         self.generation = 0
         self.available_at = 0
@@ -95,6 +106,8 @@ class FakeFM1:
         self.seq = (self.seq + 1) & 0xFF
         p = bytes((self.seq,)) + a.to_bytes(4, "little") + n.to_bytes(3, "little")
         self.current = p
+        self.last_req_at = self.clock.now_ms()
+        self.retries_left = self.retries
         out.append(bytes(P.frame(P.CMD_READ, p)))
 
     # -- host -> device ----------------------------------------------------
@@ -159,6 +172,13 @@ class FakeTransport:
         self.generation = dev.generation
         self.inbox = []
         self.closed = False
+        self.slow_level = 0
+
+    def slow_down(self):
+        if self.slow_level >= 3:
+            return False
+        self.slow_level += 1
+        return True
 
     @property
     def lost(self):
@@ -166,11 +186,25 @@ class FakeTransport:
 
     def send(self, msg):
         assert not self.lost, "send on a lost transport"
-        self.dev.receive(msg, self.inbox)
+        dev = self.dev
+        if (dev.lossy_over and len(msg) > dev.lossy_over and dev.mode in dev.lossy_modes
+                and not self.slow_level):
+            dev.log.append(("lost", len(msg)))
+            return
+        dev.receive(msg, self.inbox)
 
     def recv(self, timeout_ms):
         if self.inbox and not self.lost:
             return self.inbox.pop(0)
+        dev = self.dev
+        if dev.requests and not self.lost and dev.retries_left > 0 and not dev.pending_reset:
+            due = dev.last_req_at + dev.retry_ms
+            if due <= dev.clock.now_ms() + timeout_ms:
+                dev.clock.sleep_ms(max(0, due - dev.clock.now_ms()))
+                dev.retries_left -= 1
+                dev.last_req_at = dev.clock.now_ms()
+                dev.log.append(("repeat", dev.requests[0][0]))
+                return bytes(P.frame(P.CMD_READ, dev.current))
         # The device resets once the host has stopped answering the finish.
         if self.dev.pending_reset and not self.lost:
             self.dev.clock.sleep_ms(timeout_ms)

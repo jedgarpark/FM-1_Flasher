@@ -100,6 +100,17 @@ class USBMidiTransport:
     def lost(self):
         return self.closed or self._lost
 
+    def slow_down(self):
+        """One step gentler: 64-byte writes with a 1 ms gap, then double the gap
+        up to 8 ms. Returns False once at the slowest setting."""
+        if not self.chunk or self.chunk > 64:
+            self.chunk, self.gap_ms = 64, max(1, self.gap_ms)
+            return True
+        if self.gap_ms < 8:
+            self.gap_ms = max(1, self.gap_ms * 2)
+            return True
+        return False
+
     def send(self, sysex):
         if self.log:
             self.log("->", sysex)

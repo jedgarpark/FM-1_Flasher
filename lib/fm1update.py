@@ -33,7 +33,8 @@ class Clock:
 TIMING = {"idle": 10000, "write_idle": 180000, "reconnect": 40000, "settle": 600,
           # Community (Firmware Hub) route: pause after the kick, per-block
           # pacing, and a pause before looking for the restarted device.
-          "kick_wait": 2000, "pace": 10, "restart_wait": 3000}
+          "kick_wait": 2000, "pace": 10, "restart_wait": 3000,
+          "lost_reply": 1000}
 
 
 class Link:
@@ -48,6 +49,11 @@ class Link:
     def send(self, sysex):
         check(not self.t.lost, "USB connection lost")
         self.t.send(sysex)
+
+    def slow_down(self):
+        """Ask the transport for gentler sending; False if it can't slow further."""
+        f = getattr(self.t, "slow_down", None)
+        return bool(f and f())
 
     def read(self, ms):
         """Next valid (command, data) packet, or None after ms."""
@@ -103,11 +109,16 @@ class Updater:
         # community firmware's own updater is involved.
         self.hub_timing = self.community
         self.trace = None
+        # Times the transport has been slowed after a lost reply; reapplied to
+        # every new link so it survives re-enumeration into the loader.
+        self.slow_level = 0
 
     # -- discovery ------------------------------------------------------------
 
     def _open(self, transport):
         link = Link(transport, self.clock)
+        for _ in range(self.slow_level):
+            link.slow_down()
         try:
             reply = None
             for attempt in range(2):
@@ -264,6 +275,8 @@ class Updater:
         started = last = self.clock.now_ms()
         link = self.link
         pace = self.timing["pace"] if self.hub_timing else 0
+        prev = None
+        replied_at = 0
         while True:
             now = self.clock.now_ms()
             check(now - started < max(idle * 3, 120000), "update took too long")
@@ -279,6 +292,16 @@ class Updater:
             _, address, n = req
             if self.trace:
                 self.trace("read", address, n)
+            # The device repeats a request when our reply didn't arrive (loaders
+            # retry after ~3 s). Quick repeats are normal read plans; a slow one
+            # means the transport lost the reply, so send more gently from now on.
+            if p == prev and self.clock.now_ms() - replied_at >= self.timing["lost_reply"]:
+                slowed = link.slow_down()
+                if slowed:
+                    self.slow_level += 1
+                if self.trace:
+                    self.trace("resend", address, n, self.slow_level if slowed else None)
+            prev = p
             check(0 < n <= 512, "invalid request length")
             if address == P.FINISH_STAGE1 or address == P.FINISH_STAGE2:
                 if self.community and address != finish:
@@ -302,6 +325,7 @@ class Updater:
                 self.clock.sleep_ms(pace)
             self.pkg.read_into(address, buf, n)
             link.send(P.read_reply(p, memoryview(buf)[:n]))
+            replied_at = self.clock.now_ms()
             for b in range(address >> 8, ((address + n - 1) >> 8) + 1):
                 if not covered[b >> 3] & (1 << (b & 7)):
                     covered[b >> 3] |= 1 << (b & 7)
