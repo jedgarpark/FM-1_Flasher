@@ -124,6 +124,18 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 
 ## Phase 3: Install path on device
 
+### First install from the Feather: stock V15 to SLOOP 2.8, 2026-10-26
+
+- **Setup:** Feather RP2040 USB Host + MAX3421E FeatherWing (`build-feather-max3421e`). The package was copied to `CIRCUITPY/firmware/sloop/`. Run with `fm1_install.run('/firmware/sloop', go=True, chunk=64, gap_ms=1)` (`device/fm1_install.py`).
+- **Result: success in 109 s.** That's 8 s to verify the package sha256 on the device, then 101 s of install. The FM-1 came back as `FM-1_900`. It served 23 + 1180 requests, the same as the Mac, which takes 43 s.
+- **First two attempts failed, but safely.** Stage 1 (the stock app taking the staged loader) worked. The SLOOP community loader (USB `1209:0002`, "Felucca Update"; MIDI streaming on bulk 0x01/0x81, 64 B) then asked for block 0, never accepted our 605-byte reply, re-asked after 3 s and 5 s, and then went silent. The install raised "device stopped requesting data". **Power-cycling the FM-1 brought back stock V15 both times,** because the loader hadn't written anything yet.
+- **Cause and fix:** our reply goes out as one 808-byte bulk write, 13 packets back to back. The loader takes one-packet messages (identity, kick) but loses longer bursts through the MAX3421E. The Mac's identical bytes work. Sending in 64-byte writes with a 1 ms gap (`USBMidiTransport.chunk` / `gap_ms`, set through `fm1usb.finder(log, chunk, gap_ms)`) works. Most likely, the loader NAKs while busy, and the MAX3421E's handling of NAK-then-retry on OUT loses data. That cause is unproven.
+- **To do:**
+  - Tune the pacing (larger chunks, gap 0, or pacing only to loaders) to get closer to the Mac's time.
+  - Check whether stock V15's own loader (`ota-FM-1_015`) needs the same pacing, by installing V15 back.
+  - Add a retry to the serve loop: if the same request repeats, it was lost, so re-send.
+  - Diagnostics: `fm1_install.run` keeps a RAM ring of the last 80 SysEx messages and prints it on failure.
+
 - cmd 49, then arm, then the stage 1 serve loop streamed from SD, then re-enumeration (release, poll, reclaim, re-probe), then stage 2, then verify. Uses the same `fm1proto.py` that was tested against the simulator.
 
 ## Phase 4: UI

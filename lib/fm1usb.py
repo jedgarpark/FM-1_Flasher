@@ -85,6 +85,10 @@ class USBMidiTransport:
         self.log = log
         self.closed = False
         self._lost = False
+        # Optional pacing for slow device firmware: send in chunks of this many
+        # bytes (a multiple of 4), pausing gap_ms between them. None sends at once.
+        self.chunk = None
+        self.gap_ms = 0
         device.set_configuration()
         try:
             device.detach_kernel_driver(self.iface)
@@ -100,7 +104,13 @@ class USBMidiTransport:
             self.log("->", sysex)
         data = encode_sysex(sysex)
         try:
-            self.device.write(self.out_ep, data, 1000)
+            if self.chunk:
+                for i in range(0, len(data), self.chunk):
+                    if i and self.gap_ms:
+                        time.sleep(self.gap_ms / 1000)
+                    self.device.write(self.out_ep, data[i:i + self.chunk], 1000)
+            else:
+                self.device.write(self.out_ep, data, 1000)
         except usb.core.USBError:
             self._lost = True
             raise
@@ -110,6 +120,8 @@ class USBMidiTransport:
             cin = self.buf[i] & 0xF
             if cin == CIN_SYSEX:
                 if self.buf[i + 1] == 0xF0:
+                    if self.partial and self.log:
+                        self.log("<!", self.partial)  # a message cut short
                     self.partial = bytearray()
                 self.partial.extend(self.buf[i + 1:i + 4])
             elif cin in (CIN_END1, CIN_END2, CIN_END3) and self.partial:
@@ -130,7 +142,7 @@ class USBMidiTransport:
         end = _ticks_ms() + timeout_ms
         while True:
             try:
-                n = self.device.read(self.in_ep, self.buf, max(1, min(50, end - _ticks_ms())))
+                n = self.device.read(self.in_ep, self.buf, max(1, end - _ticks_ms()))
                 self._decode(n)
             except usb.core.USBTimeoutError:
                 pass
@@ -146,16 +158,18 @@ class USBMidiTransport:
         self.closed = True
 
 
-def finder(log=None):
+def finder(log=None, chunk=None, gap_ms=0):
     """A finder for fm1update.Updater: one transport per attached device with
-    a MIDI streaming interface."""
+    a MIDI streaming interface. chunk/gap_ms set the transports' send pacing."""
     def find():
         found = []
         for dev in usb.core.find(find_all=True):
             try:
                 ep = midi_endpoints(dev)
                 if ep:
-                    found.append(USBMidiTransport(dev, ep, log))
+                    t = USBMidiTransport(dev, ep, log)
+                    t.chunk, t.gap_ms = chunk, gap_ms
+                    found.append(t)
             except usb.core.USBError:
                 pass
         return found
