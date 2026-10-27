@@ -1,0 +1,28 @@
+diff --git a/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/board.c b/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/board.c
+index 68ed648f46..f919374008 100644
+--- a/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/board.c
++++ b/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/board.c
+@@ -29,5 +29,7 @@ bool board_reset_pin_number(uint8_t pin_number) {
+     return false;
+ }
+ void board_init(void) {
++    #if CIRCUITPY_USB_HOST
+     common_hal_usb_host_port_construct(&pin_GPIO16, &pin_GPIO17);
++    #endif
+ }
+diff --git a/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/mpconfigboard.mk b/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/mpconfigboard.mk
+index d249861efb..587158f2a8 100644
+--- a/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/mpconfigboard.mk
++++ b/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/mpconfigboard.mk
+@@ -7,3 +7,11 @@ CHIP_VARIANT = RP2040
+ CHIP_FAMILY = rp2
+ 
+ EXTERNAL_FLASH_DEVICES = "GD25Q64C,W25Q64JVxQ"
++
++# Composite USB audio+MIDI devices (e.g. M-VAVE FM-1, 293 bytes) exceed the default.
++CFLAGS += -DCFG_TUH_ENUMERATION_BUFSIZE=512
++
++# FM-1: host through the MAX3421E USB Host FeatherWing instead of PIO-USB.
++CIRCUITPY_MAX3421E = 1
++CIRCUITPY_USB_HOST = 0
++CFLAGS += -DSYS_CLK_HZ=120000000 -DPLL_SYS_VCO_FREQ_HZ=1440000000 -DPLL_SYS_POSTDIV1=6 -DPLL_SYS_POSTDIV2=2

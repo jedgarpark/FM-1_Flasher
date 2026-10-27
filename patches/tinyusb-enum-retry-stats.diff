@@ -1,0 +1,51 @@
+diff --git a/src/host/usbh.c b/src/host/usbh.c
+index e307bb5e5..bed91a755 100644
+--- a/src/host/usbh.c
++++ b/src/host/usbh.c
+@@ -347,6 +347,13 @@ TU_ATTR_ALWAYS_INLINE static inline usbh_class_driver_t const *get_driver(uint8_
+ //--------------------------------------------------------------------+
+ static void enum_new_device(hcd_event_t* event);
+ static void enum_delay_async(uintptr_t state);
++
++// FM-1 test: enumeration retry (see enum_full_complete)
++#define FM1_ENUM_RETRY_MAX      10
++#define FM1_ENUM_RETRY_DELAY_MS 500
++static uint8_t fm1_enum_retries;
++// FM-1 test instrumentation; Pico-PIO-USB defines the strong copy when it is linked.
++__attribute__((weak)) volatile uint32_t fm1_stats[12] = {0x464D3153};
+ static void process_remove_event(hcd_event_t *event);
+ static void remove_device_tree(uint8_t rhport, uint8_t hub_addr, uint8_t hub_port);
+ 
+@@ -773,6 +780,7 @@ void tuh_task_ext(uint32_t timeout_ms, bool in_isr) {
+         if (_usbh_data.enumerating_daddr == TUSB_INDEX_INVALID_8) {
+           // New device attached and we are ready
+           TU_LOG_USBH("[%u:] USBH Device Attach\r\n", event.rhport);
++          fm1_enum_retries = 0;
+           _usbh_data.enumerating_daddr = 0; // enumerate new device with address 0
+           enum_new_device(&event);
+         }
+@@ -2212,10 +2220,24 @@ void usbh_driver_set_config_complete(uint8_t dev_addr, uint8_t itf_num) {
+ static void enum_full_complete(bool success) {
+   (void)success;
+   TU_LOG_USBH("Enumeration complete: success = %u\r\n", success);
++  if (success && fm1_enum_retries) fm1_stats[9]++;  // FM1_ENUM_RETRY_OK
+ 
+   _usbh_data.enumerating_daddr = TUSB_INDEX_INVALID_8; // mark enumeration as complete
+   _usbh_data.call_after.func = NULL;
+ 
++  // FM-1 test: some devices (JieLi) only become ready after a first bus reset, so retry a
++  // failed root-port enumeration while the device is still connected.
++  tuh_bus_info_t *dev0_bus = &_usbh_data.dev0_bus;
++  if (!success && dev0_bus->hub_addr == 0 && fm1_enum_retries < FM1_ENUM_RETRY_MAX &&
++      hcd_port_connect_status(dev0_bus->rhport)) {
++    fm1_enum_retries++;
++    fm1_stats[8]++;  // FM1_ENUM_RETRY
++    TU_LOG_USBH("[%u:] FM-1 test: retry enumeration %u\r\n", dev0_bus->rhport, fm1_enum_retries);
++    _usbh_data.enumerating_daddr = 0;
++    usbh_defer_func_ms_async(FM1_ENUM_RETRY_DELAY_MS, enum_delay_async, ENUM_AFTER_DEBOUNCING_DELAY);
++    return;
++  }
++
+   #if CFG_TUH_HUB
+   // Hub status is already requested in case of successful enumeration
+   if (!success && _usbh_data.dev0_bus.hub_addr != 0) {

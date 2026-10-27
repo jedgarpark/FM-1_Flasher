@@ -63,7 +63,85 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - Check whether CircuitPython has `hashlib` with sha256.
 - Milestone: send cmd 17 to the FM-1 with `usb.core` and print the identity. Try `adafruit_usb_host_midi` first, and fall back to hand-built USB-MIDI 1.0 packets if long SysEx breaks.
 
+### Phase 2 findings (2026-10-22)
+
+- **`hashlib`:** CircuitPython 11.0.0-alpha.0 on the Feather RP2040 USB Host has it, but only as `hashlib.new("sha256")`. `fm1proto.sha256()` handles both forms.
+- **5 V on the USB-A port:** with the Feather on USB power, the FM-1 shows its charging icon, so 5 V reaches it. CircuitPython's board setup claims `USB_HOST_5V_POWER` ("in use"). Battery operation is still untested.
+- **Blocker: stock V15 never enumerates on the Feather.** Its configuration descriptor is 293 bytes (5 interfaces: UAC1 audio control, iso out, iso in, and MIDI streaming on interface 4 with bulk 0x84/0x04, 64 B). CircuitPython sets `CFG_TUH_ENUMERATION_BUFSIZE` to 284 + 4 = 288 (`supervisor/shared/usb/tusb_config.h`), and TinyUSB aborts enumeration when `wTotalLength` exceeds it. The fix is a larger buffer. That define is `#ifndef`-guarded, so a board build can override it. Felucca-family firmwares are MIDI-only and should fit, but stock V15 is the main starting point, so the flasher needs the fix.
+- **Actual blocker (2026-10-25): the Feather's PIO USB host never sees the FM-1 attach.** I captured TinyUSB host logs (CircuitPython 10.3.1 with `CIRCUITPY_DEBUG_TINYUSB=2` and the console UART on TX, read by the Pico on GP5). A Keychron K8 keyboard on the same port gives a full "Device Attach … Enumeration complete: success = 1". The FM-1 (stock V15, on, charging from the port's 5 V) produces no attach event in either USB-C orientation, before or after replugging. So the FM-1 never pulls D+ high for this host, and the descriptor size never comes into play. Hypothesis: the FM-1's chip treats the port as a charger, not a host, perhaps because the PIO host relies on the RP2040's internal pull-downs rather than standard 15 kΩ ones. Next steps: measure D+ with a multimeter, try external 15 kΩ pull-downs, or use a MAX3421E USB Host FeatherWing.
+- **CC fixer and clock tests (2026-10-25):**
+  - With an Adafruit USB-C CC fixer inline at the FM-1 (125 MHz build), the FM-1 attached three times. Each time enumeration failed: the 8-byte device descriptor sometimes read correctly, but zero-length status stages and Set Address failed.
+  - A 120 MHz build (whole-number Pico-PIO-USB clock dividers), with the 512-byte buffer and logging, enumerates the keyboard perfectly. So neither the buffer nor the clock breaks the host. With the CC fixer, the FM-1 then gave no attach in three replugs.
+  - Conclusion: whether the FM-1 attaches depends on the FM-1's USB-C power and termination, not on the host software. It is inconsistent on the Feather's USB-A port, and reliable on the Mac.
+  - Also learned: CircuitPython runs the Feather at 125 MHz by default (an SDK default), so Pico-PIO-USB's clock dividers are fractional there. Prefer 120 MHz for robustness.
+- **Descriptor size (still needed later):** the 293-byte descriptor exceeds the 288-byte default. The 512-byte build's keyboard result is unreliable (the Feather crashed off USB during that run) and needs retesting.
+- **Root cause found (2026-10-26): the FM-1 needs a second enumeration attempt after hot-plug.** This replaces the charger-detection and USB-C power theories above. The evidence, from a second Pico (CircuitPython 10.3.1 with debug logging, the TinyUSB log looped back from GP12 to GP5, and D+/D− sampled through `memorymap`):
+  - **The FM-1 runs a role-detect loop after hot-plug** (`device/fm1_lines.py`, plain inputs with pull-downs, no host): D+ up (J) for 2.05 s, then D− up (K) for 0.02–0.5 s, then SE0 for about 1.2 s, repeating about every 3.6 s with no end. Once a host has enumerated it, it holds J steadily, even after the host goes away.
+  - **A bus reset during the J phase makes it a device, but it can't answer that first enumeration.** With stock timing, it ACKs the first SETUP and then never returns the descriptor data. With 200 ms of reset recovery, it doesn't even ACK the SETUP. After that one failed attempt, it holds J and waits as a normal device.
+  - **TinyUSB never retries a failed enumeration,** so the port stays stuck until the next unplug. A fresh host, after an RP2040 reset, finds the FM-1 already waiting and enumerates it on the first try. That's why only "reset with the FM-1 plugged in" ever worked.
+  - **The earlier "no attach at all" results came from Pico-PIO-USB.** Its disconnect check only runs while the bus is active. A device that vanishes while the port waits for its bus reset left the port marked "connected" forever, so later hot-plugs were never reported. The K phase can look like a low-speed device attaching, which is one way to get into that state.
+  - **VBUS is not involved.** Cycling the host's 5 V never helps: the FM-1 is battery powered and keeps its state. The Pico gets VBUS from the Mac, so its resets don't cycle VBUS at all.
+  - **Long attach debounces are harmful.** A 2 s debounce (tried after a suggestion to lengthen waits) lands right where the FM-1 leaves its 2.05 s J phase.
+- **Fix: 5 of 5 hot-plugs mounted and answered `FM-1_015`** (Pico, `build-pico-v4-debug`, 15 kΩ pull-downs fitted). Every time, attempt 1 failed and the retry 300 ms later succeeded. The patches are in `patches/`:
+  - `tinyusb-enum-retry.diff`: retry a failed root-port enumeration up to 3 times, 300 ms apart, while the device is still connected. This is the essential fix.
+  - `pico-pio-usb-fm1.diff`:
+    - Debounce disconnect over 20 SE0 frames. Without it, the FM-1 was dropped right after a bus reset on Feather resets.
+    - Run a disconnect check while the port waits for its reset (the stuck-"connected" bug).
+    - Raise the full-speed reply timeout from 3 µs to 20 µs, which the first full FM-1 enumeration needed.
+  - `feather-enum-bufsize.diff`: `CFG_TUH_ENUMERATION_BUFSIZE=512` for the 293-byte descriptor.
+  - Also: run at 120 MHz (`-DSYS_CLK_HZ=120000000 -DPLL_SYS_VCO_FREQ_HZ=1440000000 -DPLL_SYS_POSTDIV1=6 -DPLL_SYS_POSTDIV2=2`).
+  - **No external pull-downs needed:** with the 15 kΩ resistors removed, 5 of 5 hot-plugs still mounted (same retry pattern).
+  - **On the Feather (unmodified, no pull-downs):** 7 of 10 hot-plugs mounted, all through one retry, over two runs (`build-feather-fm1`, then `build-feather-fm1-r10-debug` with 10 retries 500 ms apart; the patch in `patches/` is the 10-retry version).
+  - **The other 3 were a different failure: the FM-1 went silent.** D+/D− sat at SE0 indefinitely (sampled through `memorymap`), with no role-detect loop and no attach event. This is the "0.3 V on both lines" state measured earlier, and no host-side retry can help with it. Cycling the host 5 V (2 s or 5 s off) doesn't wake it. **Turning the FM-1 off and on while plugged in does:** it mounted immediately through the same retry. A plain replug sometimes does too. Seen 0 of 10 times on the Pico pigtail, but that sample is small, so treat it as possible on any host.
+  - **UX consequence (Phase 4):** if no FM-1 shows up within about 10 s, tell the user to turn the FM-1 off and on (or replug it). Phase 3 must also allow for this state whenever the FM-1 reboots mid-install (kick into the loader, restart after stage 1), and prompt for a power cycle instead of timing out silently.
+  - Still to check: which patches are strictly needed, and battery operation.
+- **Which patches are needed (2026-10-26).** An instrumented build (`fm1_stats` counters read through `memorymap`, `device/fm1_stats.py`) ran the stress test, hot-plugs and power cycles on the Feather:
+  - **Enumeration retry (TinyUSB): required.** 11 of 11 attaches failed the first time and succeeded on the retry.
+  - **512-byte enumeration buffer: required.** The descriptor is 293 bytes against a 288-byte default (by arithmetic; no drop-one build was run).
+  - **20 µs reply timeout: not needed.** The longest wait in ~17,400 transactions was 1 µs; none exceeded the stock 3 µs.
+  - **20-frame disconnect debounce: marginal.** It absorbed one 1-frame SE0 glitch on a live connection in ~17,400 transactions; stock code would have treated that as an unplug.
+  - **Disconnect check while waiting for reset: unproven.** It never fired. It guards a rare race that was seen earlier (no attach events after a K-phase phantom connect).
+  - **120 MHz: not tested** without it.
+- **Silent FM-1 state, more data.** On the Feather, hot-plugs at either cable end went silent roughly half the time. Power cycles with the cable seated: 8 of 10 mounted, and a later power cycle always recovered. On the Pico pigtail (VBUS straight from the Mac), 10 of 10 hot-plugs worked. The cause is unknown. Installer rule: after connecting, wait about 10 s, and if no FM-1 shows up, ask for a power cycle and repeat. Expect about a 1-in-5 chance of needing this after each FM-1 self-reboot during an install.
+- **Feather RP2040 USB Host schematic (Eagle, adafruit/Adafruit-Feather-RP2040-USB-Host-PCB):**
+  - The USB-A VBUS comes from a TPS61023 boost (IC2). Its input is VHI, the higher of USB 5 V via a Schottky diode or the LiPo. The output is set to 5.0 V (732k/100k) with 44 µF, then passes through an unrated 0805 "FUSE" (R19) to the jack. A green LED (L2, 10k) sits on VBUS.
+  - The boost's EN pin is GPIO18 (`USB_HOST_5V_POWER`), pulled up with 100k.
+  - D+/D− are GPIO16/17 through 22 Ω, with no on-board pull-downs and no ESD protection.
+  - **Caveat on the earlier VBUS kick test:** driving GPIO18 low only disables the boost. If the TPS61023 has no output disconnect (unverified), VBUS fell to about VIN minus a diode drop rather than to 0 V, so that test didn't really remove power from the FM-1.
+- **MAX3421E USB Host FeatherWing (product 5858) fixes the silent state (2026-10-26).** Setup: the wing on the Feather RP2040 USB Host (CS D10, IRQ D9, `board.SPI()`). The build is `build-feather-max3421e`: `CIRCUITPY_MAX3421E = 1`, `CIRCUITPY_USB_HOST = 0`, `board.c` guarded, 512 buffer, 120 MHz, the TinyUSB retry patch (`patches/feather-max3421e.diff`, `patches/tinyusb-enum-retry-stats.diff`). Startup: `device/fm1_max_setup.py`.
+  - **15 of 15 attaches:** 10 power cycles and 5 hot-plugs, each mounted about 6 s after the FM-1 came back, with no silent state. On the Feather's own PIO port the same tests gave 8 of 10 power cycles and about half of hot-plugs.
+  - Every attach still needed the enumeration retry, so the TinyUSB patch and the 512-byte buffer are required with the MAX3421E too.
+  - **SysEx stress test:** 200/200 identity queries (avg 12.8 ms); 603 B messages at 29.5 KB/s, against 21.3 KB/s on PIO; the install-like stream ran at 20.6 ms per message, against 24.3 ms. No errors or link losses.
+  - **Conclusion:** the silent state comes from the PIO host port (its electrical termination or its 5 V path), not from the FM-1 alone. **Use the MAX3421E wing as the flasher's USB host.**
+  - **To solve:** pin conflicts with the 3.5" TFT FeatherWing. The wing defaults to CS D10 and IRQ D9; the TFT uses D9 for TFT CS and D10 for DC (V1 pinout; V2 assumed the same). One board needs trace cuts and rewiring.
+- **Long SysEx through `fm1usb` works (2026-10-26, `device/fm1_sysex_stress.py`).** Stock V15 has no read-only command with a long reply: identity, 56 bytes on the wire, is its longest. In an install, the long messages go host to FM-1: the loader asks for 512-byte reads, which become ~603-byte SysEx frames, about 1200 per package. So the test sends long SysEx under manufacturer 0x7D, which the FM-1 ignores, and checks identity between batches. Results on `build-feather-fm1` (non-debug):
+  - 200/200 identity queries, latency 9.6 to 17.8 ms (avg 10.4).
+  - Host to FM-1, 50 messages each: 305 B at 21.5 KB/s; 603 B at 21.3 KB/s (28 ms per frame); 1024 B at 20.6 KB/s; 4096 B at 17.6 KB/s. Identity was ok after every batch.
+  - An install-like stream of 400 × 305 B with 10 ms pacing gave 24.3 ms per message, with no lost link and 4/4 identity checks ok.
+  - The debug build (TinyUSB log at 115200 baud) is slower, with identity latency around 26 ms; use non-debug builds for timing.
+  - **Install-time estimate on the Feather:** about 28 ms send + 10 ms request turnaround + 10 ms hub pacing ≈ 48 ms per 512-byte read. With ~1200 reads that's about 60 s, plus reboots and waits, so roughly 70 s. The Mac takes 33 to 43 s.
+- **USB-MIDI transport:** `adafruit_usb_host_midi` has no `write()` and loses SysEx boundaries, so `lib/fm1usb.py` implements USB-MIDI 1.0 SysEx packetizing and reassembly on `usb.core`.
+
 ## Phase 3: Install path on device
+
+### First install from the Feather: stock V15 to SLOOP 2.8, 2026-10-26
+
+- **Setup:** Feather RP2040 USB Host + MAX3421E FeatherWing (`build-feather-max3421e`). The package was copied to `CIRCUITPY/firmware/sloop/`. Run with `fm1_install.run('/firmware/sloop', go=True, chunk=64, gap_ms=1)` (`device/fm1_install.py`).
+- **Result: success in 109 s.** That's 8 s to verify the package sha256 on the device, then 101 s of install. The FM-1 came back as `FM-1_900`, and its screen shows SLOOP. It served 23 + 1180 requests, the same as the Mac, which takes 43 s.
+- **First two attempts failed, but safely.** Stage 1 (the stock app taking the staged loader) worked. The SLOOP community loader (USB `1209:0002`, "Felucca Update"; MIDI streaming on bulk 0x01/0x81, 64 B) then asked for block 0, never accepted our 605-byte reply, re-asked after 3 s and 5 s, and then went silent. The install raised "device stopped requesting data". **Power-cycling the FM-1 brought back stock V15 both times,** because the loader hadn't written anything yet.
+- **Cause and fix:** our reply goes out as one 808-byte bulk write, 13 packets back to back. The loader takes one-packet messages (identity, kick) but loses longer bursts through the MAX3421E. The Mac's identical bytes work. Sending in 64-byte writes with a 1 ms gap (`USBMidiTransport.chunk` / `gap_ms`, set through `fm1usb.finder(log, chunk, gap_ms)`) works. Most likely, the loader NAKs while busy, and the MAX3421E's handling of NAK-then-retry on OUT loses data. That cause is unproven.
+### Back to stock from the Feather: SLOOP 2.8 to V15, 2026-10-26
+
+- **Result: firmware in 108 s (13 s package verify + 93 s install), plus the factory voice restore (36 bank writes, 6.8 s).** The route was legacy with hub timing, the same as on the Mac. The loader was `ota-FM-1_015` with 1244 requests, also the same as the Mac. Pacing was the same as for SLOOP (`chunk=64, gap_ms=1`). Whether stock's loader needs that pacing is still untested.
+- **Two device-only bugs found and fixed:**
+  - **Transient read errors:** with SLOOP running, its sequencer streams MIDI notes over USB, and the MAX3421E path sometimes returns a single `USBError` on a bulk IN read. `USBMidiTransport` marked the link lost on the first one. It now needs 3 in a row (`read_errors`).
+  - **Out of memory in the voice restore:** `Package.factory_bank()` grew a bytearray to 16 KB and then copied it twice. After the long install, the fragmented heap couldn't allocate 6.6 KB, so it hit a `MemoryError`. It now allocates 16 KB once and fills it in place (output unchanged, sha256 `ecad0b86…`), and `restore_factory()` runs `gc.collect()` first. The restore was then rerun on its own: `Updater.connect()` followed by `restore_factory()`.
+- **Test note:** the optional `FM1_TEST_PKGS=sd_out/firmware` run fails `RealCommunityPackages`, before and after these changes. It expects a different folder layout. Fix the test.
+- **To do:**
+  - Tune the pacing (larger chunks, gap 0, or pacing only to loaders) to get closer to the Mac's time.
+  - Check whether stock V15's loader needs pacing at all.
+  - Add a retry to the serve loop: if the same request repeats, it was lost, so re-send.
+  - Diagnostics: `fm1_install.run` keeps a RAM ring of the last 80 SysEx messages and prints it on failure.
 
 - cmd 49, then arm, then the stage 1 serve loop streamed from SD, then re-enumeration (release, poll, reclaim, re-probe), then stage 2, then verify. Uses the same `fm1proto.py` that was tested against the simulator.
 

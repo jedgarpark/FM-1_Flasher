@@ -116,6 +116,10 @@ def sha256():
     try:
         return hashlib.sha256()
     except (AttributeError, ValueError):
+        pass
+    try:
+        return hashlib.new("sha256")  # CircuitPython's hashlib has only new()
+    except (AttributeError, ValueError):
         return None
 
 
@@ -426,7 +430,10 @@ class Package:
         check(len(banks) == 1 and banks[0]["size"] == 73226 and banks[0]["encrypted"] == 73248,
               "invalid factory voice data")
         e = banks[0]
-        out = bytearray()
+        # One up-front allocation: growing and copying 16 KB fails on a fragmented
+        # CircuitPython heap after a long install.
+        out = bytearray(16384)
+        pos = 0
         c = 0
         remaining = e["size"]
         for i in range(0, e["stored"], 32):
@@ -434,10 +441,12 @@ class Package:
             if remaining > 0:
                 c = crc16(block[:min(32, remaining)], c)
                 remaining -= 32
-            if len(out) < 16384:
-                out.extend(block)
-        check(c == e["crc"], "invalid factory voice data")
-        return bytes(out[:16384])
+            if pos < 16384:
+                k = min(len(block), 16384 - pos)
+                out[pos:pos + k] = block[:k]
+                pos += k
+        check(c == e["crc"] and pos == 16384, "invalid factory voice data")
+        return out
 
 
 def file_sha256(f, step=4096):

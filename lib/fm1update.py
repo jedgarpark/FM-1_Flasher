@@ -323,6 +323,11 @@ class Updater:
     def restore_factory(self):
         check(self.meta.get("kind") == "stock" and self.identity == P.STOCK_PRODUCT and self.link
               and not self.link.lost, "restoring voices needs stock V15")
+        try:
+            import gc
+            gc.collect()
+        except ImportError:
+            pass
         factory = self.pkg.factory_bank()
         check(P.identity(self.link.query(P.CMD_IDENTITY)) == P.STOCK_PRODUCT, "restoring voices needs stock V15")
         phase = "Restoring factory voices"
