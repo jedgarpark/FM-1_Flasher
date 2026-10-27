@@ -35,7 +35,7 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 
 ## Phase 2: Hardware spikes on the Feather (done)
 
-- **USB host:** use the MAX3421E wing with the patched CircuitPython (`patches/README.md`).
+- **USB host:** use the MAX3421E wing with the patched CircuitPython (`patches/README.md`). **On CircuitPython 11**, the built-in PIO port needs only the 512-byte buffer and 120 MHz (`patches/cp11-feather-pio.diff`), because TinyUSB now retries enumeration itself. A full install ChoralRoot → V15 worked that way (DEVNOTES §6.5). The FM-1 can still come back silent after a reboot; a Feather reset recovered it.
 - **`fm1usb`:** USB-MIDI SysEx over `usb.core`, since `adafruit_usb_host_midi` can't write SysEx.
 - **Long SysEx:** verified with the stress test.
 - **`hashlib`:** sha256 is available only as `hashlib.new("sha256")`, which `fm1proto` handles.

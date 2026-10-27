@@ -115,17 +115,28 @@ class USBMidiTransport:
         if self.log:
             self.log("->", sysex)
         data = encode_sysex(sysex)
-        try:
-            if self.chunk:
-                for i in range(0, len(data), self.chunk):
-                    if i and self.gap_ms:
-                        time.sleep(self.gap_ms / 1000)
-                    self.device.write(self.out_ep, data[i:i + self.chunk], 1000)
-            else:
-                self.device.write(self.out_ep, data, 1000)
-        except usb.core.USBError:
-            self._lost = True
-            raise
+        # A write can fail once while the device is busy (seen right after the
+        # kick). Resend the whole message: its F0 restarts the device's parser.
+        for attempt in range(3):
+            try:
+                self._write(data)
+                return
+            except usb.core.USBError as e:
+                if self.log:
+                    self.log("!w", repr(e).encode())
+                if attempt == 2:
+                    self._lost = True
+                    raise
+                time.sleep(0.02)
+
+    def _write(self, data):
+        if self.chunk:
+            for i in range(0, len(data), self.chunk):
+                if i and self.gap_ms:
+                    time.sleep(self.gap_ms / 1000)
+                self.device.write(self.out_ep, data[i:i + self.chunk], 1000)
+        else:
+            self.device.write(self.out_ep, data, 1000)
 
     def _decode(self, n):
         for i in range(0, n - 3, 4):
@@ -181,13 +192,16 @@ def finder(log=None, chunk=None, gap_ms=0):
     def find():
         found = []
         for dev in usb.core.find(find_all=True):
-            try:
-                ep = midi_endpoints(dev)
-                if ep:
-                    t = USBMidiTransport(dev, ep, log)
-                    t.chunk, t.gap_ms = chunk, gap_ms
-                    found.append(t)
-            except usb.core.USBError:
-                pass
+            # Opening can fail once right after attach; try each device twice.
+            for attempt in range(2):
+                try:
+                    ep = midi_endpoints(dev)
+                    if ep:
+                        t = USBMidiTransport(dev, ep, log)
+                        t.chunk, t.gap_ms = chunk, gap_ms
+                        found.append(t)
+                    break
+                except usb.core.USBError:
+                    time.sleep(0.1)
         return found
     return find

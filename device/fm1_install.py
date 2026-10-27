@@ -72,7 +72,7 @@ def run(folder, go=False, force=True, debug=True, chunk=64, gap_ms=0):
     print(stamp(), "INSTALLING %s: keep the FM-1 on and connected" % meta["product"])
     try:
         up.install(force=force)
-    except P.FM1Error as e:
+    except Exception as e:  # FM1Error, or a USBError the transport gave up on
         print(stamp(), "FAILED:", repr(e), "after", state["reads"], "reads")
         for entry in ring:
             print(*entry)

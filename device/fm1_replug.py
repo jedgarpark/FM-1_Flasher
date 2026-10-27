@@ -10,20 +10,39 @@ import fm1update as U
 import fm1usb
 
 DURATION = 180
+FM1_VIDS = (0x4C4A, 0x1209)  # stock V15 (JieLi); Felucca-family apps and loaders
+
+
+def fm1_present():
+    for d in usb.core.find(find_all=True):
+        if d.idVendor in FM1_VIDS:
+            return True
+    return False
+
+
+def probe():
+    # The first transport open right after attach can fail once; retry briefly.
+    for _ in range(3):
+        try:
+            found = fm1usb.finder()()
+            if found:
+                return P.identity(U.Link(found[0], U.Clock()).query(P.CMD_IDENTITY, ms=750))
+        except P.FM1Error as e:
+            last = e
+        time.sleep(0.2)
+    return "no identity"
 t0 = time.monotonic()
 present = False
 attaches = ok = 0
 print("replug test (%d s)" % DURATION)
 while time.monotonic() - t0 < DURATION:
-    found = usb.core.find(idVendor=0x4C4A, idProduct=0xC755) is not None
+    found = fm1_present()
     now = "%5.1f s" % (time.monotonic() - t0)
     if found and not present:
         attaches += 1
-        try:
-            ident = P.identity(U.Link(fm1usb.finder()()[0], U.Clock()).query(P.CMD_IDENTITY, ms=750))
+        ident = probe()
+        if ident != "no identity":
             ok += 1
-        except (P.FM1Error, IndexError) as e:
-            ident = repr(e)
         print(now, "attach", attaches, "identity:", ident)
     elif present and not found:
         print(now, "detach")
