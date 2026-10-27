@@ -89,6 +89,7 @@ class USBMidiTransport:
         # bytes (a multiple of 4), pausing gap_ms between them. None sends at once.
         self.chunk = None
         self.gap_ms = 0
+        self.read_errors = 0
         device.set_configuration()
         try:
             device.detach_kernel_driver(self.iface)
@@ -143,12 +144,17 @@ class USBMidiTransport:
         while True:
             try:
                 n = self.device.read(self.in_ep, self.buf, max(1, end - _ticks_ms()))
+                self.read_errors = 0
                 self._decode(n)
             except usb.core.USBTimeoutError:
                 pass
             except usb.core.USBError:
-                self._lost = True
-                return None
+                # A single read error can be transient (seen with a busy IN pipe on
+                # the MAX3421E); only a run of them means the device has gone.
+                self.read_errors += 1
+                if self.read_errors >= 3:
+                    self._lost = True
+                    return None
             if self.inbox:
                 return self.inbox.pop(0)
             if _ticks_ms() >= end:

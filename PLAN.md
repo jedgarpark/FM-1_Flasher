@@ -130,9 +130,16 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - **Result: success in 109 s.** That's 8 s to verify the package sha256 on the device, then 101 s of install. The FM-1 came back as `FM-1_900`, and its screen shows SLOOP. It served 23 + 1180 requests, the same as the Mac, which takes 43 s.
 - **First two attempts failed, but safely.** Stage 1 (the stock app taking the staged loader) worked. The SLOOP community loader (USB `1209:0002`, "Felucca Update"; MIDI streaming on bulk 0x01/0x81, 64 B) then asked for block 0, never accepted our 605-byte reply, re-asked after 3 s and 5 s, and then went silent. The install raised "device stopped requesting data". **Power-cycling the FM-1 brought back stock V15 both times,** because the loader hadn't written anything yet.
 - **Cause and fix:** our reply goes out as one 808-byte bulk write, 13 packets back to back. The loader takes one-packet messages (identity, kick) but loses longer bursts through the MAX3421E. The Mac's identical bytes work. Sending in 64-byte writes with a 1 ms gap (`USBMidiTransport.chunk` / `gap_ms`, set through `fm1usb.finder(log, chunk, gap_ms)`) works. Most likely, the loader NAKs while busy, and the MAX3421E's handling of NAK-then-retry on OUT loses data. That cause is unproven.
+### Back to stock from the Feather: SLOOP 2.8 to V15, 2026-10-26
+
+- **Result: firmware in 108 s (13 s package verify + 93 s install), plus the factory voice restore (36 bank writes, 6.8 s).** The route was legacy with hub timing, the same as on the Mac. The loader was `ota-FM-1_015` with 1244 requests, also the same as the Mac. Pacing was the same as for SLOOP (`chunk=64, gap_ms=1`). Whether stock's loader needs that pacing is still untested.
+- **Two device-only bugs found and fixed:**
+  - **Transient read errors:** with SLOOP running, its sequencer streams MIDI notes over USB, and the MAX3421E path sometimes returns a single `USBError` on a bulk IN read. `USBMidiTransport` marked the link lost on the first one. It now needs 3 in a row (`read_errors`).
+  - **Out of memory in the voice restore:** `Package.factory_bank()` grew a bytearray to 16 KB and then copied it twice. After the long install, the fragmented heap couldn't allocate 6.6 KB, so it hit a `MemoryError`. It now allocates 16 KB once and fills it in place (output unchanged, sha256 `ecad0b86…`), and `restore_factory()` runs `gc.collect()` first. The restore was then rerun on its own: `Updater.connect()` followed by `restore_factory()`.
+- **Test note:** the optional `FM1_TEST_PKGS=sd_out/firmware` run fails `RealCommunityPackages`, before and after these changes. It expects a different folder layout. Fix the test.
 - **To do:**
   - Tune the pacing (larger chunks, gap 0, or pacing only to loaders) to get closer to the Mac's time.
-  - Check whether stock V15's own loader (`ota-FM-1_015`) needs the same pacing, by installing V15 back.
+  - Check whether stock V15's loader needs pacing at all.
   - Add a retry to the serve loop: if the same request repeats, it was lost, so re-send.
   - Diagnostics: `fm1_install.run` keeps a RAM ring of the last 80 SysEx messages and prints it on failure.
 
