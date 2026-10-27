@@ -31,7 +31,9 @@ this file has the story and the evidence. Dates are 2026.
   [§5](#5-patch-verdicts)).
 - The Feather's **built-in USB-A host port** (PIO-USB) also works with those
   changes, but it is unreliable with the FM-1: 70–80 % of attaches succeed, and
-  the FM-1 sometimes goes silent until it is power-cycled.
+  the FM-1 sometimes goes silent. A silent FM-1 has switched to USB host
+  role; only a standard host such as the Mac brings it back reliably
+  ([§6.6](#66-what-the-silent-state-is-oct-27)).
 - Not started: the touchscreen UI (Phase 4). That needs the MAX3421E wing's
   D9/D10 to be moved, because the TFT FeatherWing uses the same pins.
 
@@ -473,8 +475,8 @@ the Feather's own USB-A port.
   away. The voice restore then ran on its own in 5.1 s.
 
 So **host-side re-initialization can clear the silent state**, where VBUS
-cycling can't. That is a new lead on its cause, and a possible recovery that
-doesn't need the user.
+cycling can't. That looked like a lead on its cause, and a possible recovery
+that doesn't need the user. §6.6 shows it doesn't hold up.
 
 **ChoralRoot handles a failed update cleanly.** When the first attempt died in
 stage 1, it showed an "update failed" screen and returned to normal play by
@@ -487,6 +489,72 @@ was wrong.
 - `finder()` tries each device twice before skipping it.
 - `fm1_install` prints its message ring for any exception.
 - `fm1_replug.py` recognises the Felucca-family `1209:xxxx` IDs.
+
+### 6.6 What the silent state is (Oct 27)
+
+**Trying to wake it from software** (`device/fm1_wake.py`), without a reset,
+when an FM-1 came back silent after a power cycle:
+
+| Nudge | Woke it? |
+|---|---|
+| Float D+/D− (pull-downs off) for 50 ms, 500 ms and 2 s | No |
+| Pull D+ up (internal pull-up), D− floating, 100 ms | No |
+| Pull D+ up, D− pulled down, 500 ms | No |
+| VBUS off (GPIO18 low) plus lines floating, 2 s | No |
+| FM-1 power cycles | 0 of 10 |
+| `microcontroller.reset()` | 2 of 2 |
+
+**A/B test of the host side.** Two debug builds of 11.0.0-alpha.2 (512-byte
+buffer, 120 MHz, TinyUSB log level 2 on the console UART, read by a Pico) with
+counters in Pico-PIO-USB (`patches/pico-pio-usb-cp11-stats.diff`):
+- **A:** stock Pico-PIO-USB.
+- **B:** plus the disconnect check while waiting for reset (`FM1_IDLE_DISCONNECT=1`).
+
+`device/fm1_cycle_watch.py` logged every attach, detach and SILENT with the counters.
+
+| | A | B |
+|---|---|---|
+| Start | Attached | Silent, even after reflashing the Feather |
+| Power cycles | 10: silent from the first, never came back | About 10: never attached |
+| Pico-PIO-USB connects | 0 | 0 |
+| TinyUSB log | One "Device Removed", then nothing | Nothing |
+| Lines | SE0 throughout | SE0 throughout |
+
+TinyUSB never saw an attach, so nothing was enumerated, retried or failed.
+Pico-PIO-USB correctly reported an empty port, so B's check had nothing to act
+on. **Neither is the cause.** Two Feather resets (one through the UF2
+bootloader, one plain) didn't wake it either this time, so the 2 of 2 above
+was luck.
+
+**Narrowing it down,** with the FM-1 silent:
+
+| Test | Result |
+|---|---|
+| Unplug the cable at the Feather for 5 s, replug | Still silent |
+| Lines for 10 s after that replug | Solid SE0, no role-detect loop (§4.5) |
+| FM-1 charging icon | On, so VBUS reaches it |
+| Same cable into the Mac | Enumerates at once as `4C4A:C755` "FM-1" |
+| Straight back into the Feather | Silent again |
+| RP2040 internal pull-up on D+, FM-1 connected | D+ stays low |
+| Same, nothing connected | D+ goes high; D− likewise |
+
+**Conclusion: a silent FM-1 is in USB *host* role.** Something on the FM-1's
+side pulls D+ down harder than the RP2040's ~50 kΩ pull-up. A device would
+have a 1.5 kΩ pull-up on D+ instead; a host has ~15 kΩ pull-downs. So the
+FM-1 sits waiting for a device, and the Feather's pins, socket, cable and host
+stack are all fine. The J/K/SE0 loop of §4.5 is its dual-role (OTG) detection;
+silent is that detection settling on "host". A standard host (Mac, MAX3421E)
+gets it back into device mode.
+
+**Why only the built-in port?** Unproven. The likely difference is
+termination: the port has no 15 kΩ pull-downs, only the RP2040's weak internal
+ones. But the Pico runs in §4.4/4.6 with and without 15 kΩ pull-downs never
+went silent either, so that isn't the whole story; the Feather's power path is
+still a suspect too. A possible fix for the built-in port, **untested**: 15 kΩ
+from D+ and D− to ground on the Feather.
+
+**For the flasher:** no host software fix exists; it's the FM-1's role
+decision. The MAX3421E wing stays the hardware (§4.8).
 
 ---
 
@@ -540,15 +608,18 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 | The 20 µs reply timeout was needed | The FM-1 answers within 1 µs |
 | The GPIO18 tests may not have removed VBUS, because the boost might not disconnect its output | It does disconnect (EN < 0.4 V turns the output fully off), so the tests were valid: removing VBUS for 2–5 s doesn't wake a silent FM-1 |
 | VBUS is not involved at all | Removing VBUS from a silent FM-1 doesn't help, but only the built-in port (boost + fuse) produces the silent state; the Pico on Mac 5 V and the MAX3421E don't. Conditions at plug-in or power-on are still a suspect, though unproven |
+| A host reset clears the silent state; the host side is stuck (§6.5) | The host is fine: the silent FM-1 is in USB host role with D+ pulled down. Feather resets work only sometimes (§6.6) |
+| The silent state comes from the port's power path or termination (§4.8) | Partly: it's the FM-1 choosing host role. What makes it choose that on this port is still open |
 
 ---
 
 ## 9. Open questions
 
-- **What causes the silent state** on the Feather's built-in port? Suspects:
+- **Why does the FM-1 pick host role** on the Feather's built-in port
+  (§6.6)? Suspects:
+  - the 22 Ω/no-pull-down termination (would 15 kΩ pull-downs fix it?)
   - the TPS61023 boost and fuse during the FM-1's current surge at plug-in or
     power-on
-  - the 22 Ω/no-pull-down termination
 
   It's decided at that moment: once the FM-1 is silent, removing VBUS doesn't
   undo it. No measurement yet. A LiPo won't help while USB is connected,
@@ -556,9 +627,8 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 - **Why does the MAX3421E lose multi-packet OUT bursts** to the FM-1's loaders
   and the busy SLOOP app, when the Mac doesn't? The NAK-handling theory is
   unproven.
-- **Why does a host reset clear the silent state** when FM-1 power cycles and
-  VBUS cycling don't (§6.5)? Can the PIO host port be re-initialized without a
-  full reset?
+- **What gets a host-role FM-1 back into device mode?** The Mac does it at
+  once; a Feather reset only sometimes, and FM-1 power cycles not at all.
 - **Battery operation** of the whole flasher: untested.
 - **Phase 4 hardware:** the MAX3421E wing (CS D10, IRQ D9) and the 3.5" TFT
   FeatherWing (TFT CS D9, DC D10) clash. One board needs rework.
