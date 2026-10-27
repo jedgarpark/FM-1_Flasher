@@ -1,0 +1,69 @@
+diff --git a/src/pio_usb_host.c b/src/pio_usb_host.c
+index c2c07d4..6645a01 100644
+--- a/src/pio_usb_host.c
++++ b/src/pio_usb_host.c
+@@ -224,6 +224,18 @@ static void end_transaction(pio_port_t *pp);
+ static void bulk_stream_detach(endpoint_t *ep, bool disconnected);
+ #endif
+ 
++// FM-1 test instrumentation, read from Python through memorymap (device/fm1_stats.py).
++// [1] low-speed connects, [7] idle disconnects, [10] connects, [11] disconnects.
++volatile uint32_t fm1_stats[12] = {0x464D3153};
++#ifndef FM1_IDLE_DISCONNECT
++#define FM1_IDLE_DISCONNECT 0
++#endif
++// FM-1 test: notice a device that vanishes while the port waits for its bus reset
++// (connection_check only runs while the bus is active).
++#define FM1_DISCONNECT_FRAMES 20
++static uint8_t fm1_idle_se0_frames[PIO_USB_ROOT_PORT_CNT];
++static volatile bool fm1_in_reset[PIO_USB_ROOT_PORT_CNT];
++
+ static bool __no_inline_not_in_flash_func(connection_check)(root_port_t *port) {
+   if (pio_usb_bus_get_line_state(port) == PORT_PIN_SE0) {
+     busy_wait_1_us();
+@@ -231,6 +243,7 @@ static bool __no_inline_not_in_flash_func(connection_check)(root_port_t *port) {
+     if (pio_usb_bus_get_line_state(port) == PORT_PIN_SE0) {
+       busy_wait_1_us();
+       // device disconnect
++      fm1_stats[11]++;
+       port->connected = false;
+       port->suspended = true;
+       port->ints |= PIO_USB_INTS_DISCONNECT_BITS;
+@@ -800,6 +813,21 @@ void __not_in_flash_func(pio_usb_host_frame)(void) {
+         root->connected = true;
+         root->suspended = true; // need a bus reset before operating
+         root->ints |= PIO_USB_INTS_CONNECT_BITS;
++        fm1_stats[10]++;
++        if (line_state == PORT_PIN_LS_IDLE) {
++          fm1_stats[1]++;
++        }
++        fm1_idle_se0_frames[root_idx] = 0;
++      }
++    } else if (FM1_IDLE_DISCONNECT && root->initialized && root->connected && root->suspended &&
++               !fm1_in_reset[root_idx]) {
++      if (pio_usb_bus_get_line_state(root) != PORT_PIN_SE0) {
++        fm1_idle_se0_frames[root_idx] = 0;
++      } else if (++fm1_idle_se0_frames[root_idx] >= FM1_DISCONNECT_FRAMES) {
++        fm1_idle_se0_frames[root_idx] = 0;
++        fm1_stats[7]++;
++        root->connected = false;
++        root->ints |= PIO_USB_INTS_DISCONNECT_BITS;
+       }
+     }
+   }
+@@ -845,6 +873,7 @@ void pio_usb_host_port_reset_start(uint8_t root_idx) {
+ 
+   // bus is not operating while in reset
+   root->suspended = true;
++  fm1_in_reset[root_idx] = true;
+ 
+   // Force line state to SE0
+   gpio_set_outover(root->pin_dp,  GPIO_OVERRIDE_LOW);
+@@ -862,6 +891,7 @@ void pio_usb_host_port_reset_end(uint8_t root_idx) {
+   gpio_set_outover(root->pin_dp,  GPIO_OVERRIDE_NORMAL);
+   gpio_set_outover(root->pin_dm,  GPIO_OVERRIDE_NORMAL);
+   busy_wait_us(100); // TODO check if this is neccessary
++  fm1_in_reset[root_idx] = false;
+ 
+   // bus back to operating
+   root->suspended = false;

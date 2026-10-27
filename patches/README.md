@@ -14,6 +14,7 @@ behind each verdict.
 | `cp11-feather-pio.diff` | CircuitPython root (**11.0.0-alpha.2**) | The Feather's built-in PIO port on CircuitPython 11: `CFG_TUH_ENUMERATION_BUFSIZE=512` and 120 MHz. Nothing else is needed. | **Yes**, for CircuitPython 11 on the PIO port |
 | `pico-pio-usb-fm1.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` | Disconnect check while waiting for reset; 20-frame disconnect debounce; full-speed reply timeout 3 → 20 µs | Only for the built-in PIO port. Keep the first two; the timeout change isn't needed |
 | `pico-pio-usb-fm1-stats.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` | The same, plus counters (RX waits, absorbed glitches, disconnects) | Test builds only |
+| `pico-pio-usb-cp11-stats.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` (**11.0.0-alpha.2**) | Connect/disconnect counters for `device/fm1_cycle_watch.py`, plus the disconnect check while waiting for reset behind `FM1_IDLE_DISCONNECT` (default off) | Test builds only. The check made no difference to the silent state (DEVNOTES §6.6) |
 
 **On CircuitPython 11** (11.0.0-alpha.2 and `main` as of 2026-10-27), TinyUSB
 already retries a failed enumeration, so the `tinyusb-*` patches aren't needed.
