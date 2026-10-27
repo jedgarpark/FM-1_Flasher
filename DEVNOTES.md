@@ -189,8 +189,9 @@ firmware with long TinyUSB enumeration waits:
   2000 ms → reset → Device Removed, about 8 times in a row.
 - **Adding a 20-frame disconnect debounce in Pico-PIO-USB:** resets then
   enumerated 2 of 3 times, but hot-plugs still produced zero attach events.
-- **Cycling the host 5 V through GPIO18 (2 s and 5 s off):** no effect. That
-  test may not have removed power at all; see §4.7.
+- **Cycling the host 5 V through GPIO18 (2 s and 5 s off):** no effect. VBUS
+  really was off: the TPS61023 boost turns its output fully off when EN is
+  below 0.4 V (§4.7).
 
 ### 4.4 Ruling out the pull-downs
 
@@ -277,9 +278,15 @@ The same firmware on the unmodified Feather:
 - **Between the boost and the jack:** 44 µF, then an unrated 0805 **fuse**.
 - **D+/D−:** GPIO16/17 through 22 Ω. No pull-downs, no ESD protection.
 
-If the TPS61023 has no output disconnect (unverified), disabling it leaves
-about VIN minus a diode drop on VBUS. In that case our "VBUS off" tests never
-actually removed power from the FM-1.
+**The VBUS tests were valid.** The TPS61023 datasheet says the output is
+turned fully off when EN is below 0.4 V. GPIO18 driven low holds EN near 0 V
+against the 100k pull-up, so the GPIO18 tests removed VBUS for 2–5 s.
+- **A silent FM-1 stays silent** with VBUS removed and restored.
+- **A working FM-1 stays on the bus** through it: the host still saw it 0.4 s
+  after power returned, and it answered identity.
+
+The FM-1 runs on its battery, so losing VBUS doesn't reset its USB state. Only
+its own power switch does.
 
 ### 4.8 The MAX3421E wing settles it
 
@@ -474,21 +481,21 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 | Attach depends on USB-C power/termination, not host software (Oct 25) | It was TinyUSB not retrying, plus a Pico-PIO-USB stuck-connected bug |
 | Longer waits help | The 2 s debounce made it worse; longer reset recovery made it worse |
 | The 20 µs reply timeout was needed | The FM-1 answers within 1 µs |
-| Cycling the host 5 V doesn't wake a silent FM-1 | Probably untested: the boost may not cut VBUS when disabled |
-| VBUS is not involved at all | The built-in port (boost + fuse) has the silent state; the Pico on Mac 5 V and the MAX3421E don't. The power path is a suspect, though unproven |
+| The GPIO18 tests may not have removed VBUS, because the boost might not disconnect its output | It does disconnect (EN < 0.4 V turns the output fully off), so the tests were valid: removing VBUS for 2–5 s doesn't wake a silent FM-1 |
+| VBUS is not involved at all | Removing VBUS from a silent FM-1 doesn't help, but only the built-in port (boost + fuse) produces the silent state; the Pico on Mac 5 V and the MAX3421E don't. Conditions at plug-in or power-on are still a suspect, though unproven |
 
 ---
 
 ## 9. Open questions
 
 - **What causes the silent state** on the Feather's built-in port? Suspects:
-  - the TPS61023 boost and fuse during the FM-1's current surge at plug-in
+  - the TPS61023 boost and fuse during the FM-1's current surge at plug-in or
+    power-on
   - the 22 Ω/no-pull-down termination
 
-  No measurement yet. A LiPo won't help while USB is connected, because Q3
-  switches the battery out of VHI.
-- **Does the TPS61023 disconnect its output when disabled?** It decides whether
-  the GPIO18 tests meant anything.
+  It's decided at that moment: once the FM-1 is silent, removing VBUS doesn't
+  undo it. No measurement yet. A LiPo won't help while USB is connected,
+  because Q3 switches the battery out of VHI.
 - **Why does the MAX3421E lose multi-packet OUT bursts** to the FM-1's loaders
   and the busy SLOOP app, when the Mac doesn't? The NAK-handling theory is
   unproven.
