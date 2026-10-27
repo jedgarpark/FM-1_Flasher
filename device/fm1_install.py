@@ -5,6 +5,10 @@ From the REPL, with the USB host already started (e.g. fm1_max_setup.py):
     import fm1_install
     fm1_install.run("/firmware/sloop")            # dry run: identity/capability only
     fm1_install.run("/firmware/sloop", go=True)   # writes the FM-1
+
+Sends go out at full speed; if the FM-1 re-asks for a block it already got
+(a lost reply), the transport slows down for the rest of the install.
+chunk/gap_ms start it slowed instead.
 """
 import json
 import time
@@ -43,6 +47,8 @@ def run(folder, go=False, force=True, debug=True, chunk=None, gap_ms=0):
             print(stamp(), "found:", values[0])
         elif event == "wait":
             print(stamp(), "waiting:", values)
+        elif event == "resend":
+            print(stamp(), "lost reply at 0x%x (%d bytes): resending, slow level %s" % values)
 
     def status(phase, pct):
         if phase != state["phase"]:

@@ -400,6 +400,76 @@ class Install(unittest.TestCase):
         up.install(force=True)
         self.assertEqual(dev.identity, "FM-1_900")
 
+    def lossy_install(self, **kw):
+        pkg, meta = community_fixture("FM-1_900")
+        clock = FakeClock()
+        dev = FakeFM1(pkg, clock, identity="FM-1_916", capability=False, loader_identity="ota-FM-1_900",
+                      lossy_over=100, **kw)
+        up = U.Updater(finder_for(dev), pkg, meta, clock=clock)
+        resends = []
+        up.trace = lambda event, *v: resends.append(v) if event == "resend" else None
+        up.connect()
+        return up, dev, resends
+
+    def test_lost_replies_slow_the_transport(self):
+        # Replies are lost until the transport slows down. One slow repeat is
+        # enough, and the slower setting carries over into the loader.
+        up, dev, resends = self.lossy_install()
+        up.install()
+        self.assertEqual(dev.identity, "FM-1_900")
+        self.assertEqual(len(resends), 1)
+        self.assertEqual(resends[0][2], 1)
+        self.assertEqual(up.slow_level, 1)
+        self.assertIn(("repeat", 0), dev.log)
+
+    def test_lost_replies_in_the_loader_only(self):
+        up, dev, resends = self.lossy_install(lossy_modes=("loader",))
+        up.install()
+        self.assertEqual(dev.identity, "FM-1_900")
+        self.assertEqual(len(resends), 1)
+
+    def test_lost_replies_without_slowdown_fail(self):
+        pkg, meta = community_fixture("FM-1_900")
+        clock = FakeClock()
+        dev = FakeFM1(pkg, clock, identity="FM-1_916", capability=False, loader_identity="ota-FM-1_900",
+                      lossy_over=100)
+
+        def finder():
+            found = finder_for(dev)()
+            for t in found:
+                t.slow_down = lambda: False
+            return found
+        up = U.Updater(finder, pkg, meta, clock=clock)
+        up.connect()
+        with self.assertRaises(P.FM1Error) as cm:
+            up.install()
+        self.assertIn("stopped requesting", str(cm.exception))
+
+    def test_quick_repeat_is_not_a_loss(self):
+        pkg, meta = community_fixture("FM-1_900")
+        clock = FakeClock()
+        dev = FakeFM1(pkg, clock, identity="FM-1_916", capability=False, loader_identity="ota-FM-1_900")
+        real = dev.receive
+        replies = [0]
+
+        def asks_again(msg, out):
+            p = P.parse(msg)
+            if p and p[0] == P.CMD_READ and dev.requests:
+                replies[0] += 1
+                if replies[0] == 5:  # ask for the same block again straight away
+                    out.append(bytes(P.frame(P.CMD_READ, dev.current)))
+                    return
+            real(msg, out)
+        dev.receive = asks_again
+        up = U.Updater(finder_for(dev), pkg, meta, clock=clock)
+        resends = []
+        up.trace = lambda event, *v: resends.append(v) if event == "resend" else None
+        up.connect()
+        up.install()
+        self.assertEqual(dev.identity, "FM-1_900")
+        self.assertEqual(resends, [])
+        self.assertEqual(up.slow_level, 0)
+
     def test_no_device(self):
         pkg, meta = open_fixture()
         up = U.Updater(lambda: [], pkg, meta, clock=FakeClock())
