@@ -324,12 +324,12 @@ cycles on the Feather, about 17,400 transactions.
 
 | Change | Where | Verdict | Evidence |
 |---|---|---|---|
-| Root-port enumeration retry | TinyUSB `usbh.c` | **Required** | 11/11 attaches failed once, then succeeded on retry (and 15/15 on MAX3421E) |
+| Root-port enumeration retry | TinyUSB `usbh.c` | **Required on 10.3.1; built in on 11** | 11/11 attaches failed once, then succeeded on retry (and 15/15 on MAX3421E). CircuitPython 11's TinyUSB has its own retry (`CFG_TUH_ENUM_ATTEMPT_MAX` = 2) |
 | `CFG_TUH_ENUMERATION_BUFSIZE=512` | board `mpconfigboard.mk` | **Required** | 293-byte descriptor > 288 default |
 | Disconnect check while waiting for reset | Pico-PIO-USB | Keep (PIO only) | Never fired in the instrumented runs; guards the stuck-"connected" race from §4.5 |
 | 20-frame disconnect debounce | Pico-PIO-USB | Keep (PIO only) | Absorbed one 1-frame SE0 glitch on a live connection |
 | FS reply timeout 3 → 20 µs | Pico-PIO-USB | **Not needed** | Longest wait 1 µs; none over 3 µs |
-| 120 MHz system clock | board CFLAGS | Untested without | Integer PIO-USB dividers; kept as a precaution |
+| 120 MHz system clock | board CFLAGS | **Required** on the PIO port | At the stock 125 MHz, ~30 % of OUT writes fail on CircuitPython 11; 0/100 at 120 MHz (§6.5) |
 | Long enumeration waits | TinyUSB `usbh.c` | **Harmful**, reverted | 2 s debounce misses the J window; 200 ms recovery stops the SETUP ACK |
 
 None of this has been posted upstream yet. The draft in `docs/` covers only
@@ -431,6 +431,63 @@ ChoralRoot (from the catalogue through `make_sd.py --catalog choralroot`) ships
 its own loader build (sha256 `ab3242c8…`, against SLOOP's `7024be59…`). It also
 reports as `ota-FM-1_900`.
 
+### 6.5 CircuitPython 11 on the built-in port (Oct 27)
+
+We retested on **CircuitPython 11.0.0-alpha.2**, the latest release. Its TinyUSB
+(`efab607`) and Pico-PIO-USB (`9e502a5`) match `main` on that day. The FM-1 was on
+the Feather's own USB-A port.
+
+**What changed upstream:**
+- **TinyUSB now retries enumeration itself.** In `usbh: add control
+  transfer timeout and enumeration retry (#3862)`, a failed enumeration
+  transfer tears down and restarts from a fresh port reset after the 150 ms
+  debounce. `CFG_TUH_ENUM_ATTEMPT_MAX` defaults to 2 (one retry). That is
+  exactly what the FM-1 needs, so **our retry patch isn't needed on 11**.
+- **The enumeration buffer is still 288 bytes,** so 512 is still required. Stock
+  V15 (293-byte descriptor) enumerated with it.
+- **Pico-PIO-USB still has no disconnect check while waiting for reset.**
+  Nothing in these tests needed it.
+
+**Results with only the 512-byte change, at the stock 125 MHz:**
+- Power cycles and hot-plugs (FM-1 running ChoralRoot): about 12 of 15 mounted,
+  similar to patched 10.3.1. The rest were the silent state.
+- **Installs fail.** The first 605-byte reply errors out of `device.write()`.
+  A write test against the FM-1 (messages it ignores) failed about 30 % of the
+  time at every length, even single 16-byte packets, and the failures landed on
+  random 64-byte pieces.
+
+**At 120 MHz: 100 of 100 writes succeeded** at every length.
+- At 125 MHz Pico-PIO-USB's 48 MHz bit clock needs a fractional divider
+  (≈2.60). Enough packets go bad that a 13-packet reply rarely survives.
+- **So 120 MHz is required** on the PIO port. §5 had it as "untested
+  without"; 10.3.1 only worked because all our builds already ran at 120 MHz.
+
+**ChoralRoot → V15 at 120 MHz:**
+- Stage 1, served by ChoralRoot's updater: done, 76 requests.
+- Stock loader: all 1244 requests with no lost replies. The write phase took
+  47 s, faster than through the MAX3421E (53 s).
+- The FM-1 then restarted into V15 and **came back silent**, so the install
+  timed out waiting before the voice restore. The screen confirmed V15.
+- **Two FM-1 power cycles didn't recover it** (lines at SE0). **A Feather reset
+  with the FM-1 left plugged in did:** it enumerated as `4C4A` "FM-1" right
+  away. The voice restore then ran on its own in 5.1 s.
+
+So **host-side re-initialization can clear the silent state**, where VBUS
+cycling can't. That is a new lead on its cause, and a possible recovery that
+doesn't need the user.
+
+**ChoralRoot handles a failed update cleanly.** When the first attempt died in
+stage 1, it showed an "update failed" screen and returned to normal play by
+itself (reported by John). The earlier assumption that it was stuck waiting
+was wrong.
+
+**Device code hardened along the way:**
+- `USBMidiTransport.send` retries a failed write up to 3 times. It resends the
+  whole message, and the leading F0 restarts the device's parser.
+- `finder()` tries each device twice before skipping it.
+- `fm1_install` prints its message ring for any exception.
+- `fm1_replug.py` recognises the Felucca-family `1209:xxxx` IDs.
+
 ---
 
 ## 7. Tools and techniques worth reusing
@@ -499,7 +556,9 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 - **Why does the MAX3421E lose multi-packet OUT bursts** to the FM-1's loaders
   and the busy SLOOP app, when the Mac doesn't? The NAK-handling theory is
   unproven.
-- **Is 120 MHz needed** on the PIO port? No drop-one build was run.
+- **Why does a host reset clear the silent state** when FM-1 power cycles and
+  VBUS cycling don't (§6.5)? Can the PIO host port be re-initialized without a
+  full reset?
 - **Battery operation** of the whole flasher: untested.
 - **Phase 4 hardware:** the MAX3421E wing (CS D10, IRQ D9) and the 3.5" TFT
   FeatherWing (TFT CS D9, DC D10) clash. One board needs rework.
