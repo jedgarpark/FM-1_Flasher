@@ -60,18 +60,18 @@ def encode_sysex(msg):
     """USB-MIDI event packets (cable 0) for one complete F0..F7 message."""
     n = len(msg)
     out = bytearray(((n + 2) // 3) * 4)
+    body = (n - 1) // 3 * 3  # bytes sent in 3-byte CIN 4 packets; the rest end the message
     o = 0
-    i = 0
-    while i < n:
-        left = n - i
-        if left > 3:
-            cin, k = CIN_SYSEX, 3
-        else:
-            cin, k = (CIN_END1, CIN_END2, CIN_END3)[left - 1], left
-        out[o] = cin
-        out[o + 1:o + 1 + k] = msg[i:i + k]
+    for i in range(0, body, 3):
+        out[o] = CIN_SYSEX
+        out[o + 1] = msg[i]
+        out[o + 2] = msg[i + 1]
+        out[o + 3] = msg[i + 2]
         o += 4
-        i += k
+    left = n - body
+    out[o] = (CIN_END1, CIN_END2, CIN_END3)[left - 1]
+    for k in range(left):
+        out[o + 1 + k] = msg[body + k]
     return out
 
 

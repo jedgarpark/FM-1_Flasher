@@ -160,34 +160,69 @@ def decode_header(data, key=0xFFFF):
 
 # --- SysEx framing -----------------------------------------------------------
 
-def pack7(data):
-    out = bytearray()
+def _pack7_into(raw, out, o):
+    """7-bit pack raw into out at o (LSB-first bit stream); returns the end.
+    Whole 7-byte groups become 8 bytes with fixed shifts, which is several
+    times faster on CircuitPython than a per-bit loop."""
+    n = len(raw)
+    full = n - n % 7
+    i = 0
+    while i < full:
+        b0 = raw[i]
+        b1 = raw[i + 1]
+        b2 = raw[i + 2]
+        b3 = raw[i + 3]
+        b4 = raw[i + 4]
+        b5 = raw[i + 5]
+        b6 = raw[i + 6]
+        out[o] = b0 & 0x7F
+        out[o + 1] = ((b0 >> 7) | (b1 << 1)) & 0x7F
+        out[o + 2] = ((b1 >> 6) | (b2 << 2)) & 0x7F
+        out[o + 3] = ((b2 >> 5) | (b3 << 3)) & 0x7F
+        out[o + 4] = ((b3 >> 4) | (b4 << 4)) & 0x7F
+        out[o + 5] = ((b4 >> 3) | (b5 << 5)) & 0x7F
+        out[o + 6] = ((b5 >> 2) | (b6 << 6)) & 0x7F
+        out[o + 7] = b6 >> 1
+        i += 7
+        o += 8
     bits = 0
     value = 0
-    for b in data:
-        value |= b << bits
+    while i < n:
+        value |= raw[i] << bits
         bits += 8
+        i += 1
         while bits >= 7:
-            out.append(value & 0x7F)
+            out[o] = value & 0x7F
+            o += 1
             value >>= 7
             bits -= 7
     if bits:
-        out.append(value & 0x7F)
+        out[o] = value & 0x7F
+        o += 1
+    return o
+
+
+def _packed_len(n):
+    return (n * 8 + 6) // 7
+
+
+def pack7(data):
+    out = bytearray(_packed_len(len(data)))
+    _pack7_into(data, out, 0)
     return out
 
 
 def frame(command, payload=b""):
     n = len(payload)
     check(n <= 520, "payload too long")
-    s = 0
-    for b in payload:
-        s += b
-    raw = bytearray((0x00, 0x59, command, n & 0xFF, n >> 8, 0))
-    raw.extend(payload)
-    raw.append(~s & 0xFF)
-    out = bytearray(b"\xf0")
-    out.extend(pack7(raw))
-    out.append(0xF7)
+    raw = bytearray(n + 7)
+    raw[0:6] = bytes((0x00, 0x59, command, n & 0xFF, n >> 8, 0))
+    raw[6:6 + n] = payload
+    raw[6 + n] = ~sum(payload) & 0xFF
+    out = bytearray(_packed_len(n + 7) + 2)
+    out[0] = 0xF0
+    out[-1] = 0xF7
+    _pack7_into(raw, out, 1)
     return out
 
 
