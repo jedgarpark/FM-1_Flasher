@@ -90,7 +90,8 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
     - Raise the full-speed reply timeout from 3 µs to 20 µs, which the first full FM-1 enumeration needed.
   - `feather-enum-bufsize.diff`: `CFG_TUH_ENUMERATION_BUFSIZE=512` for the 293-byte descriptor.
   - Also: run at 120 MHz (`-DSYS_CLK_HZ=120000000 -DPLL_SYS_VCO_FREQ_HZ=1440000000 -DPLL_SYS_POSTDIV1=6 -DPLL_SYS_POSTDIV2=2`).
-  - Still to check: whether this works without the external 15 kΩ pull-downs (the Feather has none), on the Feather itself, and which patches are strictly needed.
+  - **No external pull-downs needed:** with the 15 kΩ resistors removed, 5 of 5 hot-plugs still mounted (same retry pattern).
+  - Still to check: the Feather itself (`build-feather-fm1`: non-debug, 512 buffer, 120 MHz, both patches), and which patches are strictly needed.
 - **USB-MIDI transport:** `adafruit_usb_host_midi` has no `write()` and loses SysEx boundaries, so `lib/fm1usb.py` implements USB-MIDI 1.0 SysEx packetizing and reassembly on `usb.core`.
 
 ## Phase 3: Install path on device
