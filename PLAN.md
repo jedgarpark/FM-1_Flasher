@@ -148,7 +148,7 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
     - V15 to SLOOP: 70 s total (8 s verify), 1203 requests, no lost replies. Before: 114 s.
     - SLOOP to V15: 73 s total (12.5 s verify) including the factory voice restore, 1244 requests, no lost replies. Before: 119 s.
     - The stock app, SLOOP's loader, the SLOOP app and stock's loader all accept it. One unchunked write per reply loses replies with SLOOP's app and loader, so adaptive slow-down stays as a backstop.
-    - V15 to ChoralRoot 0.27 (Quixotic7, catalogue id `choralroot`, `FM-1_920`, beta, released 2026-10-26): 69 s total, 1172 requests, no lost replies. ChoralRoot ships its own loader build (sha256 `ab3242c8…`, against SLOOP's `7024be59…`). It also reports as `ota-FM-1_900` and also accepts the 64-byte default.
+    - V15 to ChoralRoot 0.27 (Quixotic7, catalogue id `choralroot`, `FM-1_920`, beta, released 2026-10-26): 69 s total, 1172 requests, no lost replies. ChoralRoot ships its own loader build (sha256 `ab3242c8…`, against SLOOP's `7024be59…`). It also reports as `ota-FM-1_900` and also accepts the 64-byte default. ChoralRoot confirmed on the FM-1 screen.
   - **Remaining ideas:**
     - The package sha256 check takes 8 to 12.5 s per install. Verify once when the package is copied to SD and cache the result.
     - 128 or 256-byte writes (14 to 15 ms) would save at most ~3 s.
