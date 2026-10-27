@@ -94,7 +94,13 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
   - **On the Feather (unmodified, no pull-downs):** 7 of 10 hot-plugs mounted, all through one retry, over two runs (`build-feather-fm1`, then `build-feather-fm1-r10-debug` with 10 retries 500 ms apart; the patch in `patches/` is the 10-retry version).
   - **The other 3 were a different failure: the FM-1 went silent.** D+/D− sat at SE0 indefinitely (sampled through `memorymap`), with no role-detect loop and no attach event. This is the "0.3 V on both lines" state measured earlier, and no host-side retry can help with it. Cycling the host 5 V (2 s or 5 s off) doesn't wake it. **Turning the FM-1 off and on while plugged in does:** it mounted immediately through the same retry. A plain replug sometimes does too. Seen 0 of 10 times on the Pico pigtail, but that sample is small, so treat it as possible on any host.
   - **UX consequence (Phase 4):** if no FM-1 shows up within about 10 s, tell the user to turn the FM-1 off and on (or replug it). Phase 3 must also allow for this state whenever the FM-1 reboots mid-install (kick into the loader, restart after stage 1), and prompt for a power cycle instead of timing out silently.
-  - Still to check: which patches are strictly needed, battery operation, and long SysEx transfers through `fm1usb`.
+  - Still to check: which patches are strictly needed, and battery operation.
+- **Long SysEx through `fm1usb` works (2026-10-26, `device/fm1_sysex_stress.py`).** Stock V15 has no read-only command with a long reply: identity, 56 bytes on the wire, is its longest. In an install, the long messages go host to FM-1: the loader asks for 512-byte reads, which become ~603-byte SysEx frames, about 1200 per package. So the test sends long SysEx under manufacturer 0x7D, which the FM-1 ignores, and checks identity between batches. Results on `build-feather-fm1` (non-debug):
+  - 200/200 identity queries, latency 9.6 to 17.8 ms (avg 10.4).
+  - Host to FM-1, 50 messages each: 305 B at 21.5 KB/s; 603 B at 21.3 KB/s (28 ms per frame); 1024 B at 20.6 KB/s; 4096 B at 17.6 KB/s. Identity was ok after every batch.
+  - An install-like stream of 400 × 305 B with 10 ms pacing gave 24.3 ms per message, with no lost link and 4/4 identity checks ok.
+  - The debug build (TinyUSB log at 115200 baud) is slower, with identity latency around 26 ms; use non-debug builds for timing.
+  - **Install-time estimate on the Feather:** about 28 ms send + 10 ms request turnaround + 10 ms hub pacing ≈ 48 ms per 512-byte read. With ~1200 reads that's about 60 s, plus reboots and waits, so roughly 70 s. The Mac takes 33 to 43 s.
 - **USB-MIDI transport:** `adafruit_usb_host_midi` has no `write()` and loses SysEx boundaries, so `lib/fm1usb.py` implements USB-MIDI 1.0 SysEx packetizing and reassembly on `usb.core`.
 
 ## Phase 3: Install path on device
