@@ -91,7 +91,10 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
   - `feather-enum-bufsize.diff`: `CFG_TUH_ENUMERATION_BUFSIZE=512` for the 293-byte descriptor.
   - Also: run at 120 MHz (`-DSYS_CLK_HZ=120000000 -DPLL_SYS_VCO_FREQ_HZ=1440000000 -DPLL_SYS_POSTDIV1=6 -DPLL_SYS_POSTDIV2=2`).
   - **No external pull-downs needed:** with the 15 kΩ resistors removed, 5 of 5 hot-plugs still mounted (same retry pattern).
-  - Still to check: the Feather itself (`build-feather-fm1`: non-debug, 512 buffer, 120 MHz, both patches), and which patches are strictly needed.
+  - **On the Feather (unmodified, no pull-downs):** 7 of 10 hot-plugs mounted, all through one retry, over two runs (`build-feather-fm1`, then `build-feather-fm1-r10-debug` with 10 retries 500 ms apart; the patch in `patches/` is the 10-retry version).
+  - **The other 3 were a different failure: the FM-1 went silent.** D+/D− sat at SE0 indefinitely (sampled through `memorymap`), with no role-detect loop and no attach event. This is the "0.3 V on both lines" state measured earlier, and no host-side retry can help with it. Cycling the host 5 V (2 s or 5 s off) doesn't wake it. **Turning the FM-1 off and on while plugged in does:** it mounted immediately through the same retry. A plain replug sometimes does too. Seen 0 of 10 times on the Pico pigtail, but that sample is small, so treat it as possible on any host.
+  - **UX consequence (Phase 4):** if no FM-1 shows up within about 10 s, tell the user to turn the FM-1 off and on (or replug it). Phase 3 must also allow for this state whenever the FM-1 reboots mid-install (kick into the loader, restart after stage 1), and prompt for a power cycle instead of timing out silently.
+  - Still to check: which patches are strictly needed, battery operation, and long SysEx transfers through `fm1usb`.
 - **USB-MIDI transport:** `adafruit_usb_host_midi` has no `write()` and loses SysEx boundaries, so `lib/fm1usb.py` implements USB-MIDI 1.0 SysEx packetizing and reassembly on `usb.core`.
 
 ## Phase 3: Install path on device

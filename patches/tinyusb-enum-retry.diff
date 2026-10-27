@@ -1,5 +1,5 @@
 diff --git a/src/host/usbh.c b/src/host/usbh.c
-index e307bb5e5..ebb34ae2b 100644
+index e307bb5e5..c22cc39ad 100644
 --- a/src/host/usbh.c
 +++ b/src/host/usbh.c
 @@ -347,6 +347,11 @@ TU_ATTR_ALWAYS_INLINE static inline usbh_class_driver_t const *get_driver(uint8_
@@ -8,8 +8,8 @@ index e307bb5e5..ebb34ae2b 100644
  static void enum_delay_async(uintptr_t state);
 +
 +// FM-1 test: enumeration retry (see enum_full_complete)
-+#define FM1_ENUM_RETRY_MAX      3
-+#define FM1_ENUM_RETRY_DELAY_MS 300
++#define FM1_ENUM_RETRY_MAX      10
++#define FM1_ENUM_RETRY_DELAY_MS 500
 +static uint8_t fm1_enum_retries;
  static void process_remove_event(hcd_event_t *event);
  static void remove_device_tree(uint8_t rhport, uint8_t hub_addr, uint8_t hub_port);
