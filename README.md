@@ -2,12 +2,18 @@
 
 A portable CircuitPython device that stores M-VAVE FM-1 alt firmwares on a microSD card and installs them over USB MIDI SysEx, with no computer needed. Plug the FM-1 into the flasher, pick a firmware on the touchscreen, and tap Install.
 
-**Status:** early development. See [PLAN.md](PLAN.md) for the roadmap and [fm1-firmware-flasher-brief.md](fm1-firmware-flasher-brief.md) for the protocol notes.
+**Status:** installs work from the device's REPL. V15 → SLOOP takes 70 s, SLOOP → V15 with factory voices 73 s, and V15 → ChoralRoot 69 s. The touchscreen UI isn't started.
+
+- [PLAN.md](PLAN.md): roadmap and current status.
+- [DEVNOTES.md](DEVNOTES.md): what we tried and learned, with evidence.
+- [fm1-firmware-flasher-brief.md](fm1-firmware-flasher-brief.md): protocol notes.
+- [patches/README.md](patches/README.md): the CircuitPython patches the device needs.
 
 ## Hardware
 
-- Adafruit Feather RP2040 USB Host
-- Adafruit TFT FeatherWing V2 3.5" 480x320 capacitive touch (PID 5872)
+- Adafruit Feather RP2040 USB Host, running CircuitPython 10.3.1 built with the patches in `patches/`
+- Adafruit USB Host FeatherWing with MAX3421E (PID 5858): the USB host for the FM-1
+- Adafruit TFT FeatherWing V2 3.5" 480x320 capacitive touch (PID 5872). Its D9/D10 clash with the MAX3421E wing still needs resolving.
 
 ## Development
 
