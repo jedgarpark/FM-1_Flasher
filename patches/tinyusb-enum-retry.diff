@@ -1,0 +1,43 @@
+diff --git a/src/host/usbh.c b/src/host/usbh.c
+index e307bb5e5..ebb34ae2b 100644
+--- a/src/host/usbh.c
++++ b/src/host/usbh.c
+@@ -347,6 +347,11 @@ TU_ATTR_ALWAYS_INLINE static inline usbh_class_driver_t const *get_driver(uint8_
+ //--------------------------------------------------------------------+
+ static void enum_new_device(hcd_event_t* event);
+ static void enum_delay_async(uintptr_t state);
++
++// FM-1 test: enumeration retry (see enum_full_complete)
++#define FM1_ENUM_RETRY_MAX      3
++#define FM1_ENUM_RETRY_DELAY_MS 300
++static uint8_t fm1_enum_retries;
+ static void process_remove_event(hcd_event_t *event);
+ static void remove_device_tree(uint8_t rhport, uint8_t hub_addr, uint8_t hub_port);
+ 
+@@ -773,6 +778,7 @@ void tuh_task_ext(uint32_t timeout_ms, bool in_isr) {
+         if (_usbh_data.enumerating_daddr == TUSB_INDEX_INVALID_8) {
+           // New device attached and we are ready
+           TU_LOG_USBH("[%u:] USBH Device Attach\r\n", event.rhport);
++          fm1_enum_retries = 0;
+           _usbh_data.enumerating_daddr = 0; // enumerate new device with address 0
+           enum_new_device(&event);
+         }
+@@ -2216,6 +2222,18 @@ static void enum_full_complete(bool success) {
+   _usbh_data.enumerating_daddr = TUSB_INDEX_INVALID_8; // mark enumeration as complete
+   _usbh_data.call_after.func = NULL;
+ 
++  // FM-1 test: some devices (JieLi) only become ready after a first bus reset, so retry a
++  // failed root-port enumeration while the device is still connected.
++  tuh_bus_info_t *dev0_bus = &_usbh_data.dev0_bus;
++  if (!success && dev0_bus->hub_addr == 0 && fm1_enum_retries < FM1_ENUM_RETRY_MAX &&
++      hcd_port_connect_status(dev0_bus->rhport)) {
++    fm1_enum_retries++;
++    TU_LOG_USBH("[%u:] FM-1 test: retry enumeration %u\r\n", dev0_bus->rhport, fm1_enum_retries);
++    _usbh_data.enumerating_daddr = 0;
++    usbh_defer_func_ms_async(FM1_ENUM_RETRY_DELAY_MS, enum_delay_async, ENUM_AFTER_DEBOUNCING_DELAY);
++    return;
++  }
++
+   #if CFG_TUH_HUB
+   // Hub status is already requested in case of successful enumeration
+   if (!success && _usbh_data.dev0_bus.hub_addr != 0) {

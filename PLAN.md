@@ -75,6 +75,22 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
   - Conclusion: whether the FM-1 attaches depends on the FM-1's USB-C power and termination, not on the host software. It is inconsistent on the Feather's USB-A port, and reliable on the Mac.
   - Also learned: CircuitPython runs the Feather at 125 MHz by default (an SDK default), so Pico-PIO-USB's clock dividers are fractional there. Prefer 120 MHz for robustness.
 - **Descriptor size (still needed later):** the 293-byte descriptor exceeds the 288-byte default. The 512-byte build's keyboard result is unreliable (the Feather crashed off USB during that run) and needs retesting.
+- **Root cause found (2026-10-26): the FM-1 needs a second enumeration attempt after hot-plug.** This replaces the charger-detection and USB-C power theories above. The evidence, from a second Pico (CircuitPython 10.3.1 with debug logging, the TinyUSB log looped back from GP12 to GP5, and D+/D− sampled through `memorymap`):
+  - **The FM-1 runs a role-detect loop after hot-plug** (`device/fm1_lines.py`, plain inputs with pull-downs, no host): D+ up (J) for 2.05 s, then D− up (K) for 0.02–0.5 s, then SE0 for about 1.2 s, repeating about every 3.6 s with no end. Once a host has enumerated it, it holds J steadily, even after the host goes away.
+  - **A bus reset during the J phase makes it a device, but it can't answer that first enumeration.** With stock timing, it ACKs the first SETUP and then never returns the descriptor data. With 200 ms of reset recovery, it doesn't even ACK the SETUP. After that one failed attempt, it holds J and waits as a normal device.
+  - **TinyUSB never retries a failed enumeration,** so the port stays stuck until the next unplug. A fresh host, after an RP2040 reset, finds the FM-1 already waiting and enumerates it on the first try. That's why only "reset with the FM-1 plugged in" ever worked.
+  - **The earlier "no attach at all" results came from Pico-PIO-USB.** Its disconnect check only runs while the bus is active. A device that vanishes while the port waits for its bus reset left the port marked "connected" forever, so later hot-plugs were never reported. The K phase can look like a low-speed device attaching, which is one way to get into that state.
+  - **VBUS is not involved.** Cycling the host's 5 V never helps: the FM-1 is battery powered and keeps its state. The Pico gets VBUS from the Mac, so its resets don't cycle VBUS at all.
+  - **Long attach debounces are harmful.** A 2 s debounce (tried after a suggestion to lengthen waits) lands right where the FM-1 leaves its 2.05 s J phase.
+- **Fix: 5 of 5 hot-plugs mounted and answered `FM-1_015`** (Pico, `build-pico-v4-debug`, 15 kΩ pull-downs fitted). Every time, attempt 1 failed and the retry 300 ms later succeeded. The patches are in `patches/`:
+  - `tinyusb-enum-retry.diff`: retry a failed root-port enumeration up to 3 times, 300 ms apart, while the device is still connected. This is the essential fix.
+  - `pico-pio-usb-fm1.diff`:
+    - Debounce disconnect over 20 SE0 frames. Without it, the FM-1 was dropped right after a bus reset on Feather resets.
+    - Run a disconnect check while the port waits for its reset (the stuck-"connected" bug).
+    - Raise the full-speed reply timeout from 3 µs to 20 µs, which the first full FM-1 enumeration needed.
+  - `feather-enum-bufsize.diff`: `CFG_TUH_ENUMERATION_BUFSIZE=512` for the 293-byte descriptor.
+  - Also: run at 120 MHz (`-DSYS_CLK_HZ=120000000 -DPLL_SYS_VCO_FREQ_HZ=1440000000 -DPLL_SYS_POSTDIV1=6 -DPLL_SYS_POSTDIV2=2`).
+  - Still to check: whether this works without the external 15 kΩ pull-downs (the Feather has none), on the Feather itself, and which patches are strictly needed.
 - **USB-MIDI transport:** `adafruit_usb_host_midi` has no `write()` and loses SysEx boundaries, so `lib/fm1usb.py` implements USB-MIDI 1.0 SysEx packetizing and reassembly on `usb.core`.
 
 ## Phase 3: Install path on device
