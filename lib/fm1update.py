@@ -321,10 +321,13 @@ class Updater:
                 return
             check(address <= image_len and n <= image_len - address, "request outside package")
             last = self.clock.now_ms()
-            if pace:
-                self.clock.sleep_ms(pace)
+            # Hub pacing is a minimum gap between request and reply; building the
+            # reply counts towards it (on CircuitPython that alone takes ~16 ms).
             self.pkg.read_into(address, buf, n)
-            link.send(P.read_reply(p, memoryview(buf)[:n]))
+            reply = P.read_reply(p, memoryview(buf)[:n])
+            if pace:
+                self.clock.sleep_ms(max(0, pace - (self.clock.now_ms() - last)))
+            link.send(reply)
             replied_at = self.clock.now_ms()
             for b in range(address >> 8, ((address + n - 1) >> 8) + 1):
                 if not covered[b >> 3] & (1 << (b & 7)):

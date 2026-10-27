@@ -137,9 +137,20 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
   - **Transient read errors:** with SLOOP running, its sequencer streams MIDI notes over USB, and the MAX3421E path sometimes returns a single `USBError` on a bulk IN read. `USBMidiTransport` marked the link lost on the first one. It now needs 3 in a row (`read_errors`).
   - **Out of memory in the voice restore:** `Package.factory_bank()` grew a bytearray to 16 KB and then copied it twice. After the long install, the fragmented heap couldn't allocate 6.6 KB, so it hit a `MemoryError`. It now allocates 16 KB once and fills it in place (output unchanged, sha256 `ecad0b86…`), and `restore_factory()` runs `gc.collect()` first. The restore was then rerun on its own: `Updater.connect()` followed by `restore_factory()`.
 - **Test note:** the optional `FM1_TEST_PKGS=sd_out/firmware` run fails `RealCommunityPackages`, before and after these changes. It expects a different folder layout. Fix the test.
-- **To do:**
-  - Tune the pacing (larger chunks, gap 0, or pacing only to loaders) to get closer to the Mac's time.
-  - Check whether stock V15's loader needs pacing at all.
+- **Install speed tuning (2026-10-27).**
+  - **Per-reply cost on the Feather, measured:** a 605-byte reply (808 bytes of USB-MIDI) takes 13.2 ms to send in one write. In separate 64-byte writes it takes 16.9 ms with no gap, 30.1 ms with a 1 ms gap, and 21.7 ms as 128-byte writes with a 1 ms gap. Pure Python was the bigger cost: 16.9 ms to frame and pack7 the reply, plus 10.1 ms to encode it as USB-MIDI.
+  - **Changes:**
+    - `pack7` packs 7-byte groups with fixed shifts into a preallocated buffer, and `frame` builds its output in one buffer. Together they now take 9.3 ms.
+    - `encode_sysex` uses indexed stores; 7.0 ms.
+    - Both are byte-identical to the old code at every length.
+    - The serve loop builds the reply first and then sleeps only what's left of the 10 ms hub pacing. The minimum gap between request and reply is unchanged, but on the Feather it is already used up by building the reply.
+  - **Results with 64-byte writes and no gap (now the `fm1_install` default):**
+    - V15 to SLOOP: 70 s total (8 s verify), 1203 requests, no lost replies. Before: 114 s.
+    - SLOOP to V15: 73 s total (12.5 s verify) including the factory voice restore, 1244 requests, no lost replies. Before: 119 s.
+    - The stock app, SLOOP's loader, the SLOOP app and stock's loader all accept it. One unchunked write per reply loses replies with SLOOP's app and loader, so adaptive slow-down stays as a backstop.
+  - **Remaining ideas:**
+    - The package sha256 check takes 8 to 12.5 s per install. Verify once when the package is copied to SD and cache the result.
+    - 128 or 256-byte writes (14 to 15 ms) would save at most ~3 s.
   - ~~Add a retry to the serve loop~~ (done 2026-10-27). The loop always re-sent repeats, but identical re-sends didn't help, because the transport kept losing them. Now a repeat arriving ≥1 s (`lost_reply`) after our reply counts as a lost reply. Quick repeats are normal read plans. The link then slows down (`Link.slow_down()`, `USBMidiTransport.slow_down()`: 64-byte writes with a 1 ms gap, then the gap doubles up to 8 ms). `Updater.slow_level` reapplies the setting to new links, so it carries into the loader. The simulator models lossy links and the loader's retry-twice-then-silence; 4 new tests. **Hardware check (2026-10-27): V15 to SLOOP 2.8 with no manual pacing,** `fm1_install.run('/firmware/sloop', go=True)`. Stage 1 ran at full speed with no losses. In the loader, the reply for 0x200 was lost. The loader re-asked, so the link slowed to level 1 and finished with no further losses (1204 requests = 1203 + 1 repeat). Total 114 s, against 109 s with manual pacing; SLOOP confirmed on the FM-1 screen. That difference is the loader's ~3 s retry wait. Option: start slowed whenever the link is to a loader (identity `ota-…`), which would avoid that wait.
   - **SLOOP 2.8 to V15 with adaptive pacing (2026-10-27): 119 s in total, all in one run.** That's 13 s verify, 95 s firmware, 2.5 s factory voice restore (the `factory_bank()` fix holds inside a full install), and about 8 s of waits. The *first* reply (0x0) was lost while the FM-1 was still running SLOOP in stage 1. The link went to level 1 there and stayed slow through `ota-FM-1_015`: 1245 requests = 1244 + 1 repeat, no more losses. So the SLOOP app loses long bursts too, probably because it is busy streaming MIDI notes, not only loaders. A start-slow rule would have to cover community firmware as well as loaders. Stock V15 confirmed on the FM-1 screen.
   - Diagnostics: `fm1_install.run` keeps a RAM ring of the last 80 SysEx messages and prints it on failure.

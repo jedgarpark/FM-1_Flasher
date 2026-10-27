@@ -6,9 +6,11 @@ From the REPL, with the USB host already started (e.g. fm1_max_setup.py):
     fm1_install.run("/firmware/sloop")            # dry run: identity/capability only
     fm1_install.run("/firmware/sloop", go=True)   # writes the FM-1
 
-Sends go out at full speed; if the FM-1 re-asks for a block it already got
-(a lost reply), the transport slows down for the rest of the install.
-chunk/gap_ms start it slowed instead.
+Sends go out as separate 64-byte USB writes with no extra gap (chunk=64,
+gap_ms=0): the FM-1's loaders and the SLOOP app lose replies sent as one long
+burst through the MAX3421E. If the FM-1 still re-asks for a block it already
+got (a lost reply), the transport slows down further for the rest of the
+install. chunk=None sends each reply in one write.
 """
 import json
 import time
@@ -18,7 +20,7 @@ import fm1update as U
 import fm1usb
 
 
-def run(folder, go=False, force=True, debug=True, chunk=None, gap_ms=0):
+def run(folder, go=False, force=True, debug=True, chunk=64, gap_ms=0):
     t0 = time.monotonic()
     ring = []  # (t, dir, len, head bytes) of recent USB-MIDI SysEx, printed after a failure
 
