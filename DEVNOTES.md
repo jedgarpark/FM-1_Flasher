@@ -624,6 +624,29 @@ fit yet:
 - on earlier days that bead cable worked 7–8 times in 10 on this port (§4.7),
   where today it never did
 
+**Cable readings** (TREEDIX cable tester, end to end):
+
+| Cable | CC1 | CC2 | VBUS–GND | Shell–GND | On the PIO port |
+|---|---|---|---|---|---|
+| Short, ferrite bead | 56k up | open | ~0.2 Ω | short | Silent, stays silent |
+| Short, yellow (charge-only) | 56k up | open | ~0.2 Ω | short | (no data) |
+| Blue 1 m (Adafruit, 1 m version of 6279) | 56k up | 56k up | 0.36 Ω | open | Silent after 1 of 3 cycles, then recovered on a later power cycle |
+| Blue 2 m (Adafruit 6279) | 56k up | 56k up | 1.3 Ω | open | 10 of 10 |
+
+The blue cables put the 56k Rp on both CC lines, so the FM-1 sees it in
+either orientation. That suggested a CC-orientation cause: the FM-1 sensing
+one CC pin and falling back to D+/D− role detection without Rp. **Ruled out:**
+- the bead cable went silent on the Feather with the USB-C end either way round;
+- on the Mac it enumerated either way round;
+- the 1 m blue cable, with the same CC wiring as the 2 m, still went silent.
+
+The shield doesn't track success either: the bead cable ties it to GND, the
+blue cables leave it open.
+
+So the effect grows with cable length and resistance: short cables stay silent,
+1 m recovers, 2 m and the +30 cm chain never go silent. A silent FM-1 on the
+Mac also came back only after a USB-C replug, not on its own.
+
 **V15 re-enumerates once after its first boot.** In both V15 installs (pigtail
 and 2 m cable), the FM-1 came back as `FM-1_015`, answered the installer's
 identity check, then dropped off the bus about 4 s later. The voice restore's
@@ -707,8 +730,9 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 - **Why does a short cable make the FM-1 pick host role** on the PIO port,
   when ~30 cm more avoids it (§6.7)? Is it the data lines or VBUS/GND? Why
   is the MAX3421E fine with a short cable, and why did the same short cable
-  work 7–8 times in 10 on earlier days? Needs a scope, or cutting a cable
-  to extend only the data pair or only power.
+  work 7–8 times in 10 on earlier days? It scales with length (§6.7: 0.2 Ω
+  fails, 0.36 Ω recovers, 1.3 Ω never fails). Next: a short cable with ~1 Ω
+  in series in VBUS only, to separate power from the data lines.
 - **CircuitPython 11 `hashlib`** wrong digests on a fragmented heap (§6.7):
   needs a standalone repro for an upstream issue.
 - **Why does the MAX3421E lose multi-packet OUT bursts** to the FM-1's loaders
