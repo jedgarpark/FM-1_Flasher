@@ -73,11 +73,26 @@ class Index:
                 return self.entry(i)
         return None
 
-    def select(self, slugs=None):
-        """Positions of all entries, or of those whose slug is in `slugs`."""
-        if slugs is None:
+    def select(self, slugs=None, tag=None):
+        """Positions of the entries whose slug is in `slugs` (all if None)
+        and that carry `tag` among their genres (any if None)."""
+        if slugs is None and tag is None:
             return list(range(len(self.starts)))
-        return [i for i, line in self._lines() if line.split("\t", 1)[0] in slugs]
+        out = []
+        for i, line in self._lines():
+            fields = line.split("\t", 4)
+            if (slugs is None or fields[0] in slugs) and (tag is None or tag in fields[3].split(",")):
+                out.append(i)
+        return out
+
+    def tags(self):
+        """Every genre tag, the most used first (ties by name)."""
+        counts = {}
+        for _, line in self._lines():
+            for g in line.split("\t", 4)[3].split(","):
+                if g:
+                    counts[g] = counts.get(g, 0) + 1
+        return [g for g, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
     def with_product(self, product):
         tail = "\t" + product

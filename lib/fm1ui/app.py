@@ -4,7 +4,8 @@ and an FM-1 probe. The hardware is passed in, so the same code runs on the
 Feather (fm1ui.device) and in the desktop simulator (tools/ui_sim.py).
 
 display   a displayio display with auto_refresh off
-touch     .event() -> ("tap", x, y), ("swipe", dx), or None
+touch     .event() -> ("down", x, y) when a touch starts, then ("tap", x, y),
+          ("swipe", dx) or ("up",) when it ends; or None
 probe     .connect() -> the FM-1's identity, or None if none answered
           (Connect FM-1: nothing is sent to the FM-1 before it);
           .present() -> is the connected FM-1 still attached
@@ -40,12 +41,14 @@ class App:
         self.installer = installer
         self.index = C.Index(root + "/index.txt")
         self.updated = self.index.updated
+        self.tags = self.index.tags()  # for the list's tag filter, most used first
         self.identity = None  # set by connect()
         self.connecting = False
         self.connect_failed = False
         self.next_probe = 0
         self.stack = []
         self.blank = displayio.Group()
+        self.pressed = None  # (screen, its group, pressed group, release token)
 
     # -- data -----------------------------------------------------------------
 
@@ -62,6 +65,10 @@ class App:
 
     def show(self):
         """Rebuild the top screen. The old group goes first so its RAM is free."""
+        # A pressed element's tuple holds its screen's whole group (~25 KB
+        # for the list), which would stay alive under the new screen: opening
+        # a card ran out of memory that way. The group is going anyway.
+        self.pressed = None
         for s in self.stack:
             s.release()
         self.display.root_group = self.blank
@@ -121,14 +128,37 @@ class App:
             self.identity = None
             self.stack[-1].fm1_changed()
 
+    def press(self, screen, x, y):
+        """Light up what's under a touch as it lands, so a tap shows at once
+        even when its action takes a moment."""
+        target = screen.target(x, y)
+        if target is not None:
+            self.pressed = (screen, screen.group, target, ui.press(target))
+            self.refresh()
+
+    def unpress(self):
+        """Put the pressed element back, unless its screen was rebuilt or
+        replaced meanwhile (then it's gone already)."""
+        if self.pressed is None:
+            return
+        screen, group, target, old = self.pressed
+        self.pressed = None
+        if self.stack[-1] is screen and screen.group is group:
+            ui.release(target, old)
+            self.refresh()
+
     def step(self):
         screen = self.stack[-1]
         ev = self.touch.event()
         if ev:
-            if ev[0] == "tap":
-                screen.tap(ev[1], ev[2])
-            elif ev[0] == "swipe":
-                screen.swipe(ev[1])
+            if ev[0] == "down":
+                self.press(screen, ev[1], ev[2])
+            else:  # the touch ended: act with the element still lit, then let go
+                if ev[0] == "tap":
+                    screen.tap(ev[1], ev[2])
+                elif ev[0] == "swipe":
+                    screen.swipe(ev[1])
+                self.unpress()
         now = time.monotonic()
         if not isinstance(self.stack[-1], S.ProgressScreen):
             self.poll_fm1(now)
@@ -137,7 +167,16 @@ class App:
     def run(self, home=None):
         self.push(home or S.ListScreen(self))
         while True:
-            self.step()
+            try:
+                self.step()
+            except MemoryError as e:  # back to the list rather than stop
+                print("MemoryError:", e, "on", type(self.stack[-1]).__name__)
+                self.pressed = None
+                del self.stack[1:]
+                self.display.root_group = self.blank
+                gc.collect()
+                print("free RAM:", gc.mem_free())
+                self.show()
             time.sleep(0.01)
 
 
@@ -157,6 +196,7 @@ class Gestures:
         if point is not None:
             if self.start is None:
                 self.start = point
+                self.events.append(("down", point[0], point[1]))
             self.last = point
             return
         if self.start is None:
@@ -167,6 +207,8 @@ class Gestures:
             self.events.append(("swipe", dx))
         elif abs(dx) <= self.TAP_PX and abs(dy) <= self.TAP_PX:
             self.events.append(("tap", x0, y0))
+        else:
+            self.events.append(("up",))
         self.start = self.last = None
 
     def event(self):

@@ -9,7 +9,7 @@ Needs a venv with adafruit-blinka-displayio, adafruit-circuitpython-display-text
 adafruit-circuitpython-bitmap-font, Pillow and (for the window) pygame.
 The FM-1 is faked (--identity) and installs only animate the progress screen.
 
-Script steps (--do, in order): "tap X,Y", "swipe DX", "shot FILE.png",
+Script steps (--do, in order): "tap X,Y", "press X,Y" (touch down, held), "swipe DX", "shot FILE.png",
 "identity ID" (or "identity none": unplugged), "connect", "phase NAME PCT", "wait", "found",
 "finish ok [MSG]", "finish fail MSG".
 """
@@ -151,6 +151,10 @@ def run_script(app, touch, steps):
         if cmd == "tap":
             x, y = (int(v) for v in arg.split(","))
             touch.queue.append(("tap", x, y))
+            app.step()
+        elif cmd == "press":
+            x, y = (int(v) for v in arg.split(","))
+            touch.queue.append(("down", x, y))
             app.step()
         elif cmd == "swipe":
             touch.queue.append(("swipe", int(arg)))

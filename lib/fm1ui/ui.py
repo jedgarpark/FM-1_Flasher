@@ -20,6 +20,9 @@ PINK = 0xF4C0CB
 HEART = 0xFF60BE
 BEIGE = 0xE6D1B9
 THUMB_BG = 0x0E0C0D
+# Pressed: a lit outline and a lighter fill (a darker one on cyan buttons)
+PRESSED = 0x34484A
+CYAN_PRESSED = 0x2AB3B3
 
 KIND_COLORS = {
     "groove": CYAN, "synth": PINK, "drums": 0xFF9A5C, "chords": 0xA870E8,
@@ -255,6 +258,22 @@ def set_heart(tile, filled):
     tile.pixel_shader = pal
 
 
+def press(group):
+    """Show an outlined() group (a button, card or tab) as pressed. Returns
+    what release() needs to put it back. The shapes get other shared
+    palettes; the palettes themselves never change."""
+    edge, fill = group[0], group[1]
+    old = (edge.pixel_shader, fill.pixel_shader)
+    cyan = fill.pixel_shader is palette(CYAN)
+    edge.pixel_shader = palette(FG if cyan else CYAN)
+    fill.pixel_shader = palette(CYAN_PRESSED if cyan else PRESSED)
+    return old
+
+
+def release(group, old):
+    group[0].pixel_shader, group[1].pixel_shader = old
+
+
 class Button:
     """A panel with a centred label; `rect` is its hit area."""
 
@@ -273,10 +292,11 @@ class Button:
 
 # Pictures go into a fixed pool of 80x80, 16-colour bitmaps made once, at
 # startup, and reused by every screen: allocated per screen, they fragment
-# the heap until a 3 KB thumbnail no longer fits. A page's eight thumbnails
-# take one slot each; the detail screen's 160 px picture takes four.
+# the heap until a 3 KB thumbnail no longer fits. A page's six thumbnails
+# take one slot each; the detail screen's 160 px picture takes four. Each
+# slot is 3.2 KB, so six cards a page rather than eight saves 6.4 KB.
 TILE = 80
-SLOTS = 8
+SLOTS = 6
 _slots = []
 
 

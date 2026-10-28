@@ -14,9 +14,9 @@ from fm1ui import catalog as C
 from fm1ui import ui
 
 W, H = 480, 320
-COLS, ROWS = 4, 2
+COLS, ROWS = 3, 2  # six cards: the picture pool is ui.SLOTS = 6
 PER_PAGE = COLS * ROWS
-CARD_W, CARD_H, GAP = 112, 118, 6
+CARD_W, CARD_H, GAP = 151, 118, 6
 GRID_X, GRID_Y = 7, 40
 THUMB = 80
 STOCK_PRODUCT = "FM-1_015"
@@ -56,8 +56,18 @@ class Screen:
     def tick(self, now):
         pass
 
+    def target(self, x, y):
+        """The outlined group a touch at (x, y) would press, or None.
+        Mirrors tap(): what lights up is what the tap will act on."""
+        return None
+
     def fm1_changed(self):
         """The attached FM-1 (app.identity) changed."""
+
+
+def tag_label(tag):
+    """The filter button's text: "All", or the tag as the catalogue names it."""
+    return tag[0].upper() + tag[1:] if tag else "All"
 
 
 def fm1_status(app):
@@ -68,19 +78,27 @@ def fm1_status(app):
 
 
 class ListScreen(Screen):
-    """Eight cards a page, a favourites filter, and the FM-1 in the header."""
+    """Six cards a page, a tag filter, a favourites filter, and the FM-1 in
+    the header."""
 
-    KEEP = Screen.KEEP + ("page", "favorites_only")
+    KEEP = Screen.KEEP + ("page", "favorites_only", "tag")
 
     def __init__(self, app):
         super().__init__(app)
         self.page = 0
         self.favorites_only = False
-        self.cards = []  # (entry, card rect, heart rect, heart tile)
+        self.tag = None  # one of app.tags, or None for all
+        self.cards = []  # (entry, card rect, heart rect, heart tile, card group)
 
     def items(self):
-        """Index positions of the entries the filter shows."""
-        return self.app.index.select(self.app.state.favorites if self.favorites_only else None)
+        """Index positions of the entries the filters show."""
+        return self.app.index.select(self.app.state.favorites if self.favorites_only else None, self.tag)
+
+    def next_tag(self):
+        """All -> each tag, most used first -> All."""
+        tags = self.app.tags
+        i = tags.index(self.tag) + 1 if self.tag in tags else 0
+        return tags[i] if i < len(tags) else None
 
     def build(self):
         app = self.app
@@ -91,30 +109,35 @@ class ListScreen(Screen):
         del items
         installed = app.installed_slug()
 
-        names = [e.name for e in shown] + ["FM-1 Flasher", "All", "Prev", "Next"]
-
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
         # header
         g.append(ui.text(ui.NAME, "FM-1 Flasher", ui.CYAN, 12, 18, (0, 0.5)))
-        self.tab_all = ui.Button("All", 140, 5, 52, 26, fill=ui.PANEL if not self.favorites_only else ui.BG,
-                                 edge=ui.CYAN if not self.favorites_only else ui.LINE,
-                                 color=ui.FG if not self.favorites_only else ui.DIM)
-        g.append(self.tab_all.group)
-        self.tab_fav = (198, 5, 64, 26)
+        tag_color = ui.kind_color(self.tag) if self.tag else ui.CYAN
+        self.tab_tag = ui.Button(tag_label(self.tag), 124, 5, 96, 26, edge=tag_color,
+                                 color=tag_color if self.tag else ui.FG)
+        g.append(self.tab_tag.group)
+        self.tab_fav = (226, 5, 64, 26)
         on = self.favorites_only
-        g.append(ui.outlined(198, 5, 64, 26, ui.PANEL if on else ui.BG, ui.CYAN if on else ui.LINE))
-        g.append(ui.heart_tile(True, 208, 12))
-        g.append(ui.text(ui.SMALL, "%d" % len(app.state.favorites), ui.FG if on else ui.DIM, 228, 18, (0, 0.5)))
+        self.tab_fav_g = ui.outlined(226, 5, 64, 26, ui.PANEL if on else ui.BG, ui.CYAN if on else ui.LINE)
+        g.append(self.tab_fav_g)
+        g.append(ui.heart_tile(True, 236, 12))
+        g.append(ui.text(ui.SMALL, "%d" % len(app.state.favorites), ui.FG if on else ui.DIM, 256, 18, (0, 0.5)))
         self.fm1_at = len(g)
         g.append(self.fm1_header())
 
         # cards
         self.cards = []
         if not shown:
-            g.append(ui.text(ui.BODY if self.favorites_only else ui.NAME,
-                             "No favourites yet. Tap the heart on a card to add one." if self.favorites_only
-                             else "No firmware found on the card.", ui.DIM, W // 2, 160, (0.5, 0.5)))
+            if self.favorites_only and self.tag:
+                empty = "No %s favourites." % tag_label(self.tag)
+            elif self.favorites_only:
+                empty = "No favourites yet. Tap the heart on a card to add one."
+            elif self.tag:
+                empty = "No %s firmware on the card." % tag_label(self.tag)
+            else:
+                empty = "No firmware found on the card."
+            g.append(ui.text(ui.BODY, empty, ui.DIM, W // 2, 160, (0.5, 0.5)))
         for i, e in enumerate(shown):
             x = GRID_X + (i % COLS) * (CARD_W + GAP)
             y = GRID_Y + (i // COLS) * (CARD_H + GAP)
@@ -123,9 +146,12 @@ class ListScreen(Screen):
         # footer
         self.prev = (7, 286, 64, 32)
         self.next = (409, 286, 64, 32)
+        self.arrows = []  # outlined groups, or None when there's no page that way
         for (bx, by, bw, bh), left in ((self.prev, True), (self.next, False)):
             active = (self.page > 0) if left else (self.page < pages - 1)
-            g.append(ui.outlined(bx, by, bw, bh, ui.PANEL if active else ui.BG, ui.LINE))
+            box = ui.outlined(bx, by, bw, bh, ui.PANEL if active else ui.BG, ui.LINE)
+            self.arrows.append(box if active else None)
+            g.append(box)
             g.append(ui.triangle(bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left))
         g.append(ui.text(ui.SMALL, "Page %d of %d" % (self.page + 1, pages), ui.FG, W // 2, 296, (0.5, 0.5)))
         if app.updated:
@@ -139,6 +165,7 @@ class ListScreen(Screen):
         the Connect FM-1 button (outlined in amber after a failed try)."""
         app = self.app
         g = displayio.Group()
+        self.connect_btn = None
         if app.identity:
             status = fm1_status(app)
             g.append(ui.text(ui.SMALL, status, ui.FG, 468, 18, (1, 0.5)))
@@ -146,7 +173,8 @@ class ListScreen(Screen):
         elif app.connecting:
             g.append(ui.text(ui.SMALL, "Connecting...", ui.DIM, 468, 18, (1, 0.5)))
         else:
-            g.append(ui.Button("Connect FM-1", 322, 5, 150, 26, edge=ui.WARN if app.connect_failed else ui.CYAN).group)
+            self.connect_btn = ui.Button("Connect FM-1", 322, 5, 150, 26, edge=ui.WARN if app.connect_failed else ui.CYAN)
+            g.append(self.connect_btn.group)
         return g
 
     def card(self, e, x, y, installed, slot):
@@ -155,10 +183,11 @@ class ListScreen(Screen):
             g.append(ui.panel(x + 1, y + 1, CARD_W - 2, CARD_H - 2, ui.CYAN, 3))
             g.append(ui.panel(x + 2, y + 2, CARD_W - 4, CARD_H - 4, ui.PANEL, 2))
         g.append(ui.rect(x + 4, y + 2, CARD_W - 8, 3, ui.kind_color(e.kind)))
-        g.append(ui.thumbnail(self.app.path(e.slug, "thumb.bmp"), x + 16, y + 8, THUMB, e.version, slot))
+        tx = x + (CARD_W - THUMB) // 2
+        g.append(ui.thumbnail(self.app.path(e.slug, "thumb.bmp"), tx, y + 8, THUMB, e.version, slot))
         if installed:
-            g.append(ui.rect(x + 16, y + 76, THUMB, 12, ui.CYAN))
-            g.append(ui.text(ui.SMALL, "INSTALLED", ui.BG, x + 56, y + 82, (0.5, 0.5)))
+            g.append(ui.rect(tx, y + 76, THUMB, 12, ui.CYAN))
+            g.append(ui.text(ui.SMALL, "INSTALLED", ui.BG, tx + THUMB // 2, y + 82, (0.5, 0.5)))
         fav = e.slug in self.app.state.favorites
         tile = ui.heart_tile(fav, x + CARD_W - 15, y + 10)
         g.append(tile)
@@ -172,7 +201,7 @@ class ListScreen(Screen):
             g.append(ui.text(ui.SMALL, "beta", ui.WARN, left + vw, y + 106, (0, 0)))
         else:
             g.append(ui.text(ui.SMALL, version, ui.DIM, x + CARD_W // 2, y + 106, (0.5, 0)))
-        self.cards.append((e, (x, y, CARD_W, CARD_H), (x + 84, y - GAP, CARD_W - 84 + GAP, 50), tile))
+        self.cards.append((e, (x, y, CARD_W, CARD_H), (x + CARD_W - 28, y - GAP, 28 + GAP, 50), tile, g))
         return g
 
     def turn(self, delta):
@@ -181,23 +210,43 @@ class ListScreen(Screen):
             self.page = page
             self.app.show()
 
+    def _fav_side(self, x):
+        # The tabs take the header's full height (taps there land high)
+        # and split at the gap between them.
+        return x >= (self.tab_tag.rect[0] + self.tab_tag.rect[2] + self.tab_fav[0]) // 2
+
+    def target(self, x, y):
+        if y < GRID_Y - 2 and x >= 300:
+            return self.connect_btn.group if self.connect_btn else None
+        if y < GRID_Y - 2 and 110 <= x < 290:
+            return self.tab_fav_g if self._fav_side(x) else self.tab_tag.group
+        if y >= self.prev[1] - 8 and x < 140:
+            return self.arrows[0]
+        if y >= self.next[1] - 8 and x >= W - 140:
+            return self.arrows[1]
+        for e, card, heart, tile, g in self.cards:
+            if _hit(heart, x, y):
+                return None  # the heart's own toggle is the feedback
+            if _hit(card, x, y):
+                return g
+        return None
+
     def tap(self, x, y):
         if y < GRID_Y - 2 and x >= 300:
             self.app.connect()  # connected: ask again, e.g. after a manual install
         elif y < GRID_Y - 2 and 110 <= x < 290:
-            # The tabs take the header's full height (taps there land high)
-            # and split at the gap between them.
-            fav = x >= (self.tab_all.rect[0] + self.tab_all.rect[2] + self.tab_fav[0]) // 2
-            if fav != self.favorites_only:
-                self.favorites_only = fav
-                self.page = 0
-                self.app.show()
+            if self._fav_side(x):
+                self.favorites_only = not self.favorites_only
+            else:
+                self.tag = self.next_tag()
+            self.page = 0
+            self.app.show()
         elif y >= self.prev[1] - 8 and x < 140:
             self.turn(-1)
         elif y >= self.next[1] - 8 and x >= W - 140:
             self.turn(1)
         else:
-            for e, card, heart, tile in self.cards:
+            for e, card, heart, tile, _ in self.cards:
                 if _hit(heart, x, y):
                     ui.set_heart(tile, self.app.state.toggle_favorite(e.slug))
                     if self.favorites_only:
@@ -257,7 +306,7 @@ class DetailScreen(Screen):
         self.back = ui.Button("Back", 8, 8, 84, 30)
         g.append(self.back.group)
         self.heart_rect = (424, 8, 48, 30)
-        g.append(ui.outlined(424, 8, 48, 30, ui.PANEL, ui.LINE))
+        g.append(ui.outlined(424, 8, 48, 30, ui.PANEL, ui.LINE))  # the heart's toggle is its feedback
         self.heart = ui.heart_tile(e.slug in app.state.favorites, 442, 18)
         g.append(self.heart)
 
@@ -326,6 +375,15 @@ class DetailScreen(Screen):
         g.append(self.install.group)
         g.append(ui.text(ui.SMALL, note, color, 12, 299, (0, 0.5)))
         return g
+
+    def target(self, x, y):
+        if self.back.hit(x, y):
+            return self.back.group
+        if _hit(self.heart_rect, x, y, 14):
+            return None
+        if self.install.hit(x, y) and not self.app.connecting:
+            return self.install.group
+        return None
 
     def tap(self, x, y):
         if self.back.hit(x, y):
@@ -401,6 +459,13 @@ class ConfirmScreen(Screen):
         g.append(self.go.group)
         self.group = g
         return g
+
+    def target(self, x, y):
+        if self.cancel.hit(x, y):
+            return self.cancel.group
+        if self.go.hit(x, y) and self.ready:
+            return self.go.group
+        return None
 
     def tap(self, x, y):
         if self.cancel.hit(x, y):
@@ -533,6 +598,11 @@ class ProgressScreen(Screen):
             self.note.set("Power-cycle the FM-1; the firmware it had still boots.")
         self.ok.group.hidden = False
         self.app.refresh()
+
+    def target(self, x, y):
+        if self.done is not None and self.ok.hit(x, y):
+            return self.ok.group
+        return None
 
     def tap(self, x, y):
         if self.done is not None and self.ok.hit(x, y):

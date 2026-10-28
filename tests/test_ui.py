@@ -76,6 +76,14 @@ class Catalog(unittest.TestCase):
         self.assertEqual(index.select({"zp12", "sloop", "gone"}), [2, 3])
         self.assertEqual(index.with_product("FM-1_900"), ["hortator", "sloop"])
 
+    def test_tags(self):
+        index = C.Index(self.index)
+        self.assertEqual(index.tags(), ["drums", "dev", "groove", "official"])
+        self.assertEqual(index.select(tag="drums"), [1, 3])
+        self.assertEqual(index.select(tag="dev"), [2])  # second genre counts too
+        self.assertEqual(index.select({"zp12", "sloop"}, tag="drums"), [3])
+        self.assertEqual(index.select(tag="ambient"), [])
+
     def test_installed_badge(self):
         entries = C.Index(self.index)
         s = C.State(self.state_path)
@@ -111,16 +119,21 @@ class Gestures(unittest.TestCase):
         for p in points:
             self.g.sample(p)
         self.g.sample(None)
-        return self.g.event()
+        events = []
+        while True:
+            ev = self.g.event()
+            if ev is None:
+                return events
+            events.append(ev)
 
     def test_tap(self):
-        self.assertEqual(self.feed((100, 50), (104, 52)), ("tap", 100, 50))
+        self.assertEqual(self.feed((100, 50), (104, 52)), [("down", 100, 50), ("tap", 100, 50)])
 
     def test_swipe(self):
-        self.assertEqual(self.feed((300, 150), (250, 152), (200, 160)), ("swipe", -100))
+        self.assertEqual(self.feed((300, 150), (250, 152), (200, 160)), [("down", 300, 150), ("swipe", -100)])
 
-    def test_drag_is_ignored(self):
-        self.assertIsNone(self.feed((100, 50), (140, 90)))
+    def test_drag_only_lets_go(self):
+        self.assertEqual(self.feed((100, 50), (140, 90)), [("down", 100, 50), ("up",)])
 
 
 if __name__ == "__main__":
