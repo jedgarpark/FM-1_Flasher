@@ -666,6 +666,25 @@ the return codes of `psa_hash_update` and `psa_hash_clone`, so a failure would
 be silent. Workaround: soft-reset before an install. Needs a proper repro
 before an upstream issue.
 
+### 6.8 The TFT FeatherWing next to the PIO host (Oct 27)
+
+The TFT FeatherWing V2 3.5" (5872) on Feather 2, with the FM-1 on the 2 m
+cable and the built-in PIO port. `device/tft_check.py` drew colour bars,
+mirrored the console and read touches; nothing it uses (SPI, D5, D6, D9, D10,
+I2C) touches GPIO16–18.
+
+- **Display:** HX8357 at 480x320 on `board.SPI()`, CS D9, DC D10, 24 MHz.
+- **Touch:** FT5336 at I2C 0x38. Points come back in the panel's native
+  portrait frame (x up to ~320, y up to ~480), so landscape needs a swap and
+  flip.
+- **RAM:** about 128 KB free with the display up, 122 KB after an install.
+- **Installs with the console on the screen:** V15 → ChoralRoot in 85 s
+  (71 s without the display) and ChoralRoot → V15 with voices in 103 s
+  (82 s), both with no resends or slow-downs. V15 re-enumerated after its first
+  boot and `_restore_after_boot` handled it. The extra time is the console
+  scrolling: the voice restore, which prints a line per step, took 6.6 s
+  instead of 1.8 s. A real UI that redraws a progress bar should cost less.
+
 ---
 
 ## 7. Tools and techniques worth reusing
