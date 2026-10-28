@@ -37,9 +37,12 @@ this file has the story and the evidence. Dates are 2026.
   ([§6.6](#66-what-the-silent-state-is-oct-27),
   [§6.7](#67-cable-length-decides-it-oct-27)). A 30 cm USB-A pigtail on D11/D12
   works the same way, which leaves D9/D10 free.
-- Not started: the touchscreen UI (Phase 4). With the MAX3421E wing, its
-  D9/D10 must be moved, because the TFT FeatherWing uses the same pins; the
-  PIO port avoids that.
+- **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
+  V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
+  V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
+  in 84–98 s ([§6.9](#69-first-install-from-the-touch-ui-oct-28)). With the
+  MAX3421E wing instead, its D9/D10 must be moved, because the TFT
+  FeatherWing uses the same pins.
 
 ---
 
@@ -684,6 +687,68 @@ I2C) touches GPIO16–18.
   boot and `_restore_after_boot` handled it. The extra time is the console
   scrolling: the voice restore, which prints a line per step, took 6.6 s
   instead of 1.8 s. A real UI that redraws a progress bar should cost less.
+
+### 6.9 First install from the touch UI (Oct 28)
+
+Feather 2, TFT FeatherWing, 2 m cable, built-in PIO port. The UI starts an
+install by saving the slug in NVM and soft-reloading, so the install runs on
+a fresh heap. Three failures before V15 → SLOOP worked (84.4 s, no resends):
+
+- **After a soft reload the FM-1 misses the first query or two.** It isn't
+  reset by the reload and stays enumerated. The installer's two identity
+  tries ran out: "no FM-1 answered". Watching from the REPL: no answer to
+  the first two queries, then every one answers.
+- **Reopening the endpoints each try never gets an answer.** A wait loop
+  that opened a transport, queried, then released it (`deinit()`) got no
+  reply in 15 s. Without a reload, fresh transports answer at once, even
+  after `deinit()`. Unproven guess: a data-toggle mismatch that each reopen
+  restores. The fix keeps one transport for the whole wait (answered on
+  query 3) and hands it to the installer.
+- **A garbage-collected `usb.core.Device` closes the endpoints it opened,**
+  and endpoints belong to the device address, not the object
+  (`shared-module/usb/core/Device.c`, `__del__` → `tuh_edpt_close`). Device
+  objects dropped by an earlier probe were collected 2 s into staging and
+  closed endpoint 0x04 under the installer: Pico-PIO-USB printed
+  `no endpoint 0x04` and the reply write failed with `USBError`. The
+  transport's `close()` now calls `device.deinit()`, and nothing drops a
+  Device it has used without closing it.
+
+Then SLOOP → V15 with factory voices, 84.5 s, no resends. SLOOP answered
+the first identity query after the reload, so the missed queries may be
+V15's.
+
+Also seen:
+- **"invalid factory voice data" in the package check: `hashlib` returned an
+  all-zero digest.** First seen on the first SLOOP → V15 attempt. Once the
+  three checks behind that message said which one failed, two MONK-1 → V15
+  attempts in a row both failed the voice bank's **SHA-256**, with ~53 KB
+  free. The bank's CRC had passed just before, and so had the whole-file and
+  loader SHA-256s. Recomputing didn't help: three tries in a row gave
+  `0000…0000`. So the hash failed outright and `hashlib` reported no error
+  (`shared-module/hashlib/Hash.c` ignores the PSA return codes, §6.7).
+  The bank was hashed as one 16 KB `update()`. The other hashes go 2–4 KB at a
+  time and never failed. Feeding the bank 1 KB at a time, MONK-1 → V15 passed
+  first try (97.2 s, voices restored), with the same free RAM. Likely cause,
+  not confirmed in the source: mbedtls's PSA layer copies each update's input
+  to a temporary buffer, and a 16 KB block doesn't fit a fragmented heap. That
+  also fits the REPL passing with 74 KB free. All three SHA-256 checks now
+  recompute after a mismatch (`check_sha256`: a wrong digest can't match by
+  chance), and the log says "failed" for an all-zero digest. For an upstream
+  issue: a 16 KB `update()` on a fragmented heap → silent all-zero digest.
+- **The package check takes 11–30 s.** Slow checks went with the failures,
+  but the passing V15 run above also took 26.8 s, so slowness alone isn't
+  the fault. Not explained.
+- **White screen:** once after replugging the FM-1 during a failed install.
+  The code was still running (Ctrl-C found it polling touch). Not explained.
+- **Serial input stops if Ctrl-C arrives during a soft reboot.** Sending
+  Ctrl-D, then Ctrl-C ~0.6 s later, left `code.py` and the UI running but
+  the console accepting no input (writes time out). CIRCUITPY was still
+  readable. Only a reset cleared it. This happened twice, both from my
+  scripted keys, and it explains the earlier "unresponsive Feather". Wait
+  for `code.py` to start before sending Ctrl-C.
+- **Unreadable disk prompt:** after a hard reset the Mac called the SD card's
+  drive unreadable (Eject is safe). Probably shown over USB before `code.py`
+  mounts the card.
 
 ---
 

@@ -1,0 +1,609 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""The flasher's screens: firmware list, details, confirm and install progress.
+
+Each screen builds its displayio group when shown and lets it go when another
+screen covers it, so only one screen's objects are in RAM. Screens get
+taps and swipes from the App and redraw by changing their objects in place.
+"""
+import json
+import time
+
+import displayio
+
+from fm1ui import catalog as C
+from fm1ui import ui
+
+W, H = 480, 320
+COLS, ROWS = 3, 2  # six cards: the picture pool is ui.SLOTS = 6
+PER_PAGE = COLS * ROWS
+CARD_W, CARD_H, GAP = 151, 118, 6
+GRID_X, GRID_Y = 7, 40
+THUMB = 80
+STOCK_PRODUCT = "FM-1_015"
+
+
+def _hit(rect, x, y, slack=0):
+    """Is (x, y) in rect, or within `slack` px of it? Small targets get
+    slack: a fingertip lands 10-15 px from where it's aimed."""
+    rx, ry, rw, rh = rect
+    return rx - slack <= x < rx + rw + slack and ry - slack <= y < ry + rh + slack
+
+
+class Screen:
+    # Attributes that outlive a build; release() drops every other one, so
+    # the displayio objects a screen keeps handles on are freed with its group.
+    KEEP = ("app", "group")
+
+    def __init__(self, app):
+        self.app = app
+        self.group = None
+
+    def build(self):
+        raise NotImplementedError
+
+    def release(self):
+        self.group = None
+        for k in list(self.__dict__):
+            if k not in self.KEEP:
+                delattr(self, k)
+
+    def tap(self, x, y):
+        pass
+
+    def swipe(self, dx):
+        pass
+
+    def tick(self, now):
+        pass
+
+    def target(self, x, y):
+        """The outlined group a touch at (x, y) would press, or None.
+        Mirrors tap(): what lights up is what the tap will act on."""
+        return None
+
+    def fm1_changed(self):
+        """The attached FM-1 (app.identity) changed."""
+
+
+def tag_label(tag):
+    """The filter button's text: "All", or the tag as the catalogue names it."""
+    return tag[0].upper() + tag[1:] if tag else "All"
+
+
+def fm1_status(app):
+    """"FM-1: <what it runs>" for the connected FM-1."""
+    slug = app.installed_slug()
+    e = app.entry(slug) if slug else None
+    return "FM-1: " + (C.display_name(e) if e else app.identity)
+
+
+class ListScreen(Screen):
+    """Six cards a page, a tag filter, a favourites filter, and the FM-1 in
+    the header."""
+
+    KEEP = Screen.KEEP + ("page", "favorites_only", "tag")
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.page = 0
+        self.favorites_only = False
+        self.tag = None  # one of app.tags, or None for all
+        self.cards = []  # (entry, card rect, heart rect, heart tile, card group)
+
+    def items(self):
+        """Index positions of the entries the filters show."""
+        return self.app.index.select(self.app.state.favorites if self.favorites_only else None, self.tag)
+
+    def next_tag(self):
+        """All -> each tag, most used first -> All."""
+        tags = self.app.tags
+        i = tags.index(self.tag) + 1 if self.tag in tags else 0
+        return tags[i] if i < len(tags) else None
+
+    def build(self):
+        app = self.app
+        items = self.items()
+        pages = C.page_count(len(items), PER_PAGE)
+        self.page = min(self.page, pages - 1)
+        shown = [app.index.entry(i) for i in C.page_slice(items, self.page, PER_PAGE)]
+        del items
+        installed = app.installed_slug()
+
+        g = displayio.Group()
+        g.append(ui.rect(0, 0, W, H, ui.BG))
+        # header
+        g.append(ui.text(ui.NAME, "FM-1 Flasher", ui.CYAN, 12, 18, (0, 0.5)))
+        tag_color = ui.kind_color(self.tag) if self.tag else ui.CYAN
+        self.tab_tag = ui.Button(tag_label(self.tag), 124, 5, 96, 26, edge=tag_color,
+                                 color=tag_color if self.tag else ui.FG)
+        g.append(self.tab_tag.group)
+        self.tab_fav = (226, 5, 64, 26)
+        on = self.favorites_only
+        self.tab_fav_g = ui.outlined(226, 5, 64, 26, ui.PANEL if on else ui.BG, ui.CYAN if on else ui.LINE)
+        g.append(self.tab_fav_g)
+        g.append(ui.heart_tile(True, 236, 12))
+        g.append(ui.text(ui.SMALL, "%d" % len(app.state.favorites), ui.FG if on else ui.DIM, 256, 18, (0, 0.5)))
+        self.fm1_at = len(g)
+        g.append(self.fm1_header())
+
+        # cards
+        self.cards = []
+        if not shown:
+            if self.favorites_only and self.tag:
+                empty = "No %s favourites." % tag_label(self.tag)
+            elif self.favorites_only:
+                empty = "No favourites yet. Tap the heart on a card to add one."
+            elif self.tag:
+                empty = "No %s firmware on the card." % tag_label(self.tag)
+            else:
+                empty = "No firmware found on the card."
+            g.append(ui.text(ui.BODY, empty, ui.DIM, W // 2, 160, (0.5, 0.5)))
+        for i, e in enumerate(shown):
+            x = GRID_X + (i % COLS) * (CARD_W + GAP)
+            y = GRID_Y + (i // COLS) * (CARD_H + GAP)
+            g.append(self.card(e, x, y, e.slug == installed, i))
+
+        # footer
+        self.prev = (7, 286, 64, 32)
+        self.next = (409, 286, 64, 32)
+        self.arrows = []  # outlined groups, or None when there's no page that way
+        for (bx, by, bw, bh), left in ((self.prev, True), (self.next, False)):
+            active = (self.page > 0) if left else (self.page < pages - 1)
+            box = ui.outlined(bx, by, bw, bh, ui.PANEL if active else ui.BG, ui.LINE)
+            self.arrows.append(box if active else None)
+            g.append(box)
+            g.append(ui.triangle(bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left))
+        g.append(ui.text(ui.SMALL, "Page %d of %d" % (self.page + 1, pages), ui.FG, W // 2, 296, (0.5, 0.5)))
+        if app.updated:
+            g.append(ui.text(ui.SMALL, "Catalogue " + C.nice_date(app.updated), ui.DIM, W // 2, 311, (0.5, 0.5)))
+        self.pages = pages
+        self.group = g
+        return g
+
+    def fm1_header(self):
+        """The header's right end: the connected FM-1, "Connecting...", or
+        the Connect FM-1 button (outlined in amber after a failed try)."""
+        app = self.app
+        g = displayio.Group()
+        self.connect_btn = None
+        if app.identity:
+            status = fm1_status(app)
+            g.append(ui.text(ui.SMALL, status, ui.FG, 468, 18, (1, 0.5)))
+            g.append(ui.rect(468 - ui.width(ui.SMALL, status) - 14, 14, 8, 8, ui.OK))
+        elif app.connecting:
+            g.append(ui.text(ui.SMALL, "Connecting...", ui.DIM, 468, 18, (1, 0.5)))
+        else:
+            self.connect_btn = ui.Button("Connect FM-1", 322, 5, 150, 26, edge=ui.WARN if app.connect_failed else ui.CYAN)
+            g.append(self.connect_btn.group)
+        return g
+
+    def card(self, e, x, y, installed, slot):
+        g = ui.outlined(x, y, CARD_W, CARD_H, ui.PANEL, ui.CYAN if installed else ui.LINE)
+        if installed:  # a second line makes the outline read at a glance
+            g.append(ui.panel(x + 1, y + 1, CARD_W - 2, CARD_H - 2, ui.CYAN, 3))
+            g.append(ui.panel(x + 2, y + 2, CARD_W - 4, CARD_H - 4, ui.PANEL, 2))
+        g.append(ui.rect(x + 4, y + 2, CARD_W - 8, 3, ui.kind_color(e.kind)))
+        tx = x + (CARD_W - THUMB) // 2
+        g.append(ui.thumbnail(self.app.path(e.slug, "thumb.bmp"), tx, y + 8, THUMB, e.version, slot))
+        if installed:
+            g.append(ui.rect(tx, y + 76, THUMB, 12, ui.CYAN))
+            g.append(ui.text(ui.SMALL, "INSTALLED", ui.BG, tx + THUMB // 2, y + 82, (0.5, 0.5)))
+        fav = e.slug in self.app.state.favorites
+        tile = ui.heart_tile(fav, x + CARD_W - 15, y + 10)
+        g.append(tile)
+        name = C.ellipsize(e.name, lambda s: ui.width(ui.NAME, s), CARD_W - 8)
+        g.append(ui.text(ui.NAME, name, ui.FG, x + CARD_W // 2, y + 90, (0.5, 0)))
+        version = C.ellipsize(e.version, lambda s: ui.width(ui.SMALL, s), CARD_W - (50 if e.beta else 8))
+        if e.beta:
+            vw, bw = ui.width(ui.SMALL, version + " "), ui.width(ui.SMALL, "beta")
+            left = x + (CARD_W - vw - bw) // 2
+            g.append(ui.text(ui.SMALL, version, ui.DIM, left, y + 106, (0, 0)))
+            g.append(ui.text(ui.SMALL, "beta", ui.WARN, left + vw, y + 106, (0, 0)))
+        else:
+            g.append(ui.text(ui.SMALL, version, ui.DIM, x + CARD_W // 2, y + 106, (0.5, 0)))
+        self.cards.append((e, (x, y, CARD_W, CARD_H), (x + CARD_W - 28, y - GAP, 28 + GAP, 50), tile, g))
+        return g
+
+    def turn(self, delta):
+        page = self.page + delta
+        if 0 <= page < self.pages:
+            self.page = page
+            self.app.show()
+
+    def _fav_side(self, x):
+        # The tabs take the header's full height (taps there land high)
+        # and split at the gap between them.
+        return x >= (self.tab_tag.rect[0] + self.tab_tag.rect[2] + self.tab_fav[0]) // 2
+
+    def target(self, x, y):
+        if y < GRID_Y - 2 and x >= 300:
+            return self.connect_btn.group if self.connect_btn else None
+        if y < GRID_Y - 2 and 110 <= x < 290:
+            return self.tab_fav_g if self._fav_side(x) else self.tab_tag.group
+        if y >= self.prev[1] - 8 and x < 140:
+            return self.arrows[0]
+        if y >= self.next[1] - 8 and x >= W - 140:
+            return self.arrows[1]
+        for e, card, heart, tile, g in self.cards:
+            if _hit(heart, x, y):
+                return None  # the heart's own toggle is the feedback
+            if _hit(card, x, y):
+                return g
+        return None
+
+    def tap(self, x, y):
+        if y < GRID_Y - 2 and x >= 300:
+            self.app.connect()  # connected: ask again, e.g. after a manual install
+        elif y < GRID_Y - 2 and 110 <= x < 290:
+            if self._fav_side(x):
+                self.favorites_only = not self.favorites_only
+            else:
+                self.tag = self.next_tag()
+            self.page = 0
+            self.app.show()
+        elif y >= self.prev[1] - 8 and x < 140:
+            self.turn(-1)
+        elif y >= self.next[1] - 8 and x >= W - 140:
+            self.turn(1)
+        else:
+            for e, card, heart, tile, _ in self.cards:
+                if _hit(heart, x, y):
+                    ui.set_heart(tile, self.app.state.toggle_favorite(e.slug))
+                    if self.favorites_only:
+                        self.app.show()
+                    else:
+                        self.app.refresh()
+                    return
+                if _hit(card, x, y):
+                    self.app.push(DetailScreen(self.app, e))
+                    return
+
+    def swipe(self, dx):
+        self.turn(1 if dx < 0 else -1)
+
+    def fm1_changed(self):
+        if self.app.connecting:  # just the header, quickly, before the wait
+            self.group[self.fm1_at] = self.fm1_header()
+            self.app.refresh()
+        else:  # the INSTALLED card may change too
+            self.app.show()
+
+
+class DetailScreen(Screen):
+    """The picture, name, author, version, tags and description, with Back,
+    a favourite toggle and Install (Connect FM-1 until one is connected)."""
+
+    KEEP = Screen.KEEP + ("entry", "meta")
+
+    def __init__(self, app, entry):
+        super().__init__(app)
+        self.entry = entry
+        self.meta = None
+
+    def build(self):
+        e, app = self.entry, self.app
+        if self.meta is None:
+            try:
+                with open(app.path(e.slug, "meta.json")) as f:
+                    self.meta = json.load(f)
+            except (OSError, ValueError):
+                self.meta = {}
+        m = self.meta
+        author = m.get("author") or ""
+        desc = m.get("description") or ""
+        size = m.get("bytes")
+        info = "  ".join(s for s in (C.version_label(e.version), e.product,
+                                     "%d KB" % (size // 1024) if size else "") if s)
+        tags = [(g, ui.kind_color(g)) for g in e.genre.split(",") if g]
+        if e.beta:
+            tags.append(("beta", ui.WARN))
+        if m.get("license"):
+            tags.append((m["license"], ui.DIM))
+
+        g = displayio.Group()
+        g.append(ui.rect(0, 0, W, H, ui.BG))
+        g.append(ui.rect(0, 0, W, 3, ui.kind_color(e.kind)))
+        self.back = ui.Button("Back", 8, 8, 84, 30)
+        g.append(self.back.group)
+        self.heart_rect = (424, 8, 48, 30)
+        g.append(ui.outlined(424, 8, 48, 30, ui.PANEL, ui.LINE))  # the heart's toggle is its feedback
+        self.heart = ui.heart_tile(e.slug in app.state.favorites, 442, 18)
+        g.append(self.heart)
+
+        g.append(ui.outlined(11, 47, 162, 162, ui.THUMB_BG, ui.LINE, 1))
+        g.append(ui.thumbnail(app.path(e.slug, "large.bmp"), 12, 48, 160, e.version))
+
+        x0 = 186
+        tf = ui.title_font(e.name)
+        name = C.ellipsize(e.name, lambda s: ui.width(tf, s), W - x0 - 60)
+        g.append(ui.text(tf, name, ui.FG, x0, 48, (0, 0)))
+        y = 76
+        if author:
+            g.append(ui.text(ui.BODY, C.ellipsize("by " + author, lambda s: ui.width(ui.BODY, s), W - x0 - 12),
+                             ui.DIM, x0, y, (0, 0)))
+            y += 22
+        g.append(ui.text(ui.SMALL, info, ui.DIM, x0, y, (0, 0)))
+        y += 20
+        tx = x0
+        for label, color in tags:
+            w = ui.width(ui.SMALL, label) + 14
+            if tx + w > W - 8:
+                break
+            g.append(ui.outlined(tx, y, w, 20, ui.PANEL, ui.LINE, 3))
+            g.append(ui.text(ui.SMALL, label, color, tx + w // 2, y + 10, (0.5, 0.5)))
+            tx += w + 6
+        y += 30
+
+        # Description: beside the picture, then full width under it.
+        lines = []
+        rest = desc
+        width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
+        while rest and y + 16 <= 276:
+            left = x0 if y < 212 else 12
+            line = C.wrap(rest, width_of, W - left - 12)[0]
+            rest = rest[len(line):].lstrip(" ")
+            if rest and y + 34 > 276:  # last line that fits
+                line = C.ellipsize(line + " " + rest, width_of, W - left - 12 if left == x0 else 300)
+                rest = ""
+            lines.append((left, y, line))
+            y += 18
+        for left, ly, line in lines:
+            g.append(ui.text(ui.BODY, line, ui.TEXT, left, ly, (0, 0)))
+
+        self.bar_at = len(g)
+        g.append(self.bar())
+        self.group = g
+        return g
+
+    def bar(self):
+        """The bottom line: what's connected, and Install or Connect FM-1."""
+        app = self.app
+        g = displayio.Group()
+        if app.identity:
+            installed = app.installed_slug() == self.entry.slug
+            label, ready = ("Install again" if installed else "Install"), True
+            note, color = ("Installed on this FM-1", ui.CYAN) if installed else (fm1_status(app), ui.DIM)
+        elif app.connecting:
+            label, ready = "Connect FM-1", False
+            note, color = "Connecting...", ui.DIM
+        else:
+            label, ready = "Connect FM-1", True
+            note, color = (("No FM-1 answered. Is it on and plugged in?", ui.WARN) if app.connect_failed
+                           else ("Connect the FM-1 to install.", ui.DIM))
+        self.install = ui.Button(label, 316, 282, 156, 34, fill=ui.CYAN if ready else ui.BG,
+                                 edge=ui.CYAN if ready else ui.LINE, color=ui.BG if ready else ui.LINE)
+        g.append(self.install.group)
+        g.append(ui.text(ui.SMALL, note, color, 12, 299, (0, 0.5)))
+        return g
+
+    def target(self, x, y):
+        if self.back.hit(x, y):
+            return self.back.group
+        if _hit(self.heart_rect, x, y, 14):
+            return None
+        if self.install.hit(x, y) and not self.app.connecting:
+            return self.install.group
+        return None
+
+    def tap(self, x, y):
+        if self.back.hit(x, y):
+            self.app.pop()
+        elif _hit(self.heart_rect, x, y, 14):
+            ui.set_heart(self.heart, self.app.state.toggle_favorite(self.entry.slug))
+            self.app.refresh()
+        elif self.install.hit(x, y):
+            if self.app.identity:
+                self.app.push(ConfirmScreen(self.app, self.entry))
+            else:
+                self.app.connect()
+
+    def fm1_changed(self):
+        self.group[self.bar_at] = self.bar()
+        self.app.refresh()
+
+    def swipe(self, dx):
+        if dx > 0:
+            self.app.pop()
+
+
+class ConfirmScreen(Screen):
+    """Install X over what the FM-1 is running? Reached with an FM-1 connected;
+    goes back to the details if it's unplugged."""
+
+    KEEP = Screen.KEEP + ("entry",)
+
+    def __init__(self, app, entry):
+        super().__init__(app)
+        self.entry = entry
+
+    def message(self):
+        app, e = self.app, self.entry
+        ident = app.identity
+        if not ident:
+            return False, "The FM-1 is no longer connected. Go back and tap Connect FM-1."
+        current = app.installed_slug()
+        cur = app.entry(current) if current else None
+        running = C.display_name(cur) if cur else ident
+        if current == e.slug:
+            text = "%s is already on the FM-1. Install it again?" % e.name
+        elif e.product == STOCK_PRODUCT:
+            text = ("This puts back M-VAVE's official firmware and its factory voices, "
+                    "replacing %s." % running)
+        elif ident == STOCK_PRODUCT:
+            text = ("The FM-1 runs M-VAVE's official V15. %s replaces it; the M-VAVE V15 card "
+                    "puts it back any time." % e.name)
+        else:
+            text = "%s replaces %s on the FM-1." % (e.name, running)
+        return True, text + " Keep the FM-1 on and connected; it takes one to two minutes."
+
+    def build(self):
+        e = self.entry
+        ready, msg = self.message()
+        self.ready = ready
+        title = "Install %s?" % e.name
+        width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
+        g = displayio.Group()
+        g.append(ui.rect(0, 0, W, H, ui.BG))
+        g.append(ui.outlined(30, 30, 420, 260, ui.PANEL, ui.LINE))
+        g.append(ui.rect(34, 32, 412, 3, ui.kind_color(e.kind)))
+        tf = ui.title_font(title)
+        g.append(ui.text(tf, C.ellipsize(title, lambda s: ui.width(tf, s), 380), ui.FG, 50, 52, (0, 0)))
+        y = 92
+        for line in C.wrap(msg, width_of, 380)[:7]:
+            g.append(ui.text(ui.BODY, line, ui.TEXT, 50, y, (0, 0)))
+            y += 19
+        self.cancel = ui.Button("Cancel", 50, 234, 170, 40)
+        self.go = ui.Button("Install", 260, 234, 170, 40, fill=ui.CYAN if ready else ui.BG,
+                            edge=ui.CYAN if ready else ui.LINE, color=ui.BG if ready else ui.LINE)
+        g.append(self.cancel.group)
+        g.append(self.go.group)
+        self.group = g
+        return g
+
+    def target(self, x, y):
+        if self.cancel.hit(x, y):
+            return self.cancel.group
+        if self.go.hit(x, y) and self.ready:
+            return self.go.group
+        return None
+
+    def tap(self, x, y):
+        if self.cancel.hit(x, y):
+            self.app.pop()
+        elif self.go.hit(x, y) and self.ready:
+            self.app.start_install(self.entry)
+
+    def fm1_changed(self):
+        if self.app.identity:
+            self.app.show()
+        else:  # unplugged: back to the details, which offer Connect FM-1
+            self.app.pop()
+
+
+class ProgressScreen(Screen):
+    """Install progress: the phase, a bar, elapsed time and hints. The
+    installer drives it through phase(), wait() and finish()."""
+
+    BAR = (40, 156, 400, 26)
+    KEEP = Screen.KEEP + ("entry", "t0", "waiting_since", "done", "last_draw")
+    LONG_WAIT_S = 20
+
+    def __init__(self, app, entry):
+        super().__init__(app)
+        self.entry = entry
+        self.t0 = time.monotonic()
+        self.waiting_since = None
+        self.done = None
+        self.last_draw = 0
+
+    def build(self):
+        e = self.entry
+        g = displayio.Group()
+        g.append(ui.rect(0, 0, W, H, ui.BG))
+        g.append(ui.rect(0, 0, W, 3, ui.kind_color(e.kind)))
+        tf = ui.title_font(e.name)
+        self.title = ui.text(tf, C.ellipsize("Installing %s" % e.name, lambda s: ui.width(tf, s), 440),
+                             ui.FG, W // 2, 50, (0.5, 0))
+        g.append(self.title)
+        self.sub = ui.text(ui.BODY, "Keep the FM-1 on and connected.", ui.DIM, W // 2, 84, (0.5, 0))
+        g.append(self.sub)
+        bx, by, bw, bh = self.BAR
+        self.phase_label = ui.text(ui.NAME, "Preparing", ui.FG, bx, by - 10, (0, 1))
+        g.append(self.phase_label)
+        self.pct = ui.text(ui.NAME, "", ui.FG, bx + bw, by - 10, (1, 1))
+        g.append(self.pct)
+        g.append(ui.outlined(bx, by, bw, bh, ui.PANEL, ui.LINE))
+        self.fill = ui.rect(bx + 3, by + 3, 1, bh - 6, ui.CYAN)
+        self.fill_group = displayio.Group()  # shapes can't hide themselves; groups can
+        self.fill_group.append(self.fill)
+        self.fill_group.hidden = True
+        g.append(self.fill_group)
+        self.elapsed = ui.text(ui.SMALL, "Elapsed 0:00", ui.DIM, bx, by + bh + 14, (0, 0.5))
+        g.append(self.elapsed)
+        self.note = ui.text(ui.BODY, " ", ui.WARN, W // 2, 232, (0.5, 0.5))
+        g.append(self.note)
+        self.ok = ui.Button("OK", 170, 266, 140, 40, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
+        self.ok.group.hidden = True
+        g.append(self.ok.group)
+        self.group = g
+        return g
+
+    def _bar(self, pct, color=None):
+        bx, by, bw, bh = self.BAR
+        w = max(1, (bw - 6) * pct // 100)
+        self.fill.width = w
+        if color is not None:
+            self.fill.pixel_shader = ui.palette(color)
+        self.fill_group.hidden = pct <= 0
+
+    def _clock(self, now):
+        s = int(now - self.t0)
+        self.elapsed.set("Elapsed %d:%02d" % (s // 60, s % 60))
+
+    def phase(self, name, pct):
+        """Installer status callback."""
+        if self.waiting_since is not None:
+            self.waiting_since = None
+            self.note.set(" ")
+        self.phase_label.set(name)
+        self.pct.set("%d%%" % pct)
+        self._bar(pct)
+        self.redraw()
+
+    def wait(self, what, note="Waiting for the FM-1 to restart..."):
+        """The installer is waiting for the FM-1 to come back."""
+        self.waiting_since = time.monotonic()
+        self.note.color = ui.WARN
+        self.note.set(note)
+        self.redraw(force=True)
+
+    def found(self):
+        if self.waiting_since is not None:
+            self.waiting_since = None
+            self.note.set(" ")
+            self.redraw(force=True)
+
+    def tick(self, now):
+        if self.done is not None:
+            return
+        if self.waiting_since is not None and now - self.waiting_since > self.LONG_WAIT_S:
+            self.note.set("If it doesn't come back, turn the FM-1 off and on again.")
+        self.redraw()
+
+    def redraw(self, force=False):
+        now = time.monotonic()
+        if force or now - self.last_draw >= 1:
+            self._clock(now)
+            self.last_draw = now
+            self.app.refresh()
+
+    def finish(self, ok, message=""):
+        self.done = ok
+        self._clock(time.monotonic())
+        if ok:
+            self.title.set("Installed %s" % self.entry.name)
+            self.title.color = ui.OK
+            self.phase_label.set("Done")
+            self.pct.set("100%")
+            self._bar(100, ui.OK)
+            self.sub.set(" ")
+            self.note.color = ui.DIM
+            self.note.set(message or " ")
+        else:
+            self.title.set("Install failed")
+            self.title.color = ui.BAD
+            self.sub.set(message[:60] if message else " ")
+            self._bar(max(1, self.fill.width * 100 // (self.BAR[2] - 6)), ui.BAD)
+            self.note.color = ui.WARN
+            self.note.set("Power-cycle the FM-1; the firmware it had still boots.")
+        self.ok.group.hidden = False
+        self.app.refresh()
+
+    def target(self, x, y):
+        if self.done is not None and self.ok.hit(x, y):
+            return self.ok.group
+        return None
+
+    def tap(self, x, y):
+        if self.done is not None and self.ok.hit(x, y):
+            self.app.finish_install()

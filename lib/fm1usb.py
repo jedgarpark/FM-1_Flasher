@@ -183,7 +183,17 @@ class USBMidiTransport:
                 return None
 
     def close(self):
-        self.closed = True
+        # Release the endpoints now. A usb.core.Device closes the endpoints it
+        # opened when it's garbage-collected, and endpoints belong to the
+        # device address, not the object: a dropped Device collected later
+        # closes them under the next transport on the same FM-1 ("no
+        # endpoint 0x04" two seconds into an install).
+        if not self.closed:
+            self.closed = True
+            try:
+                self.device.deinit()
+            except (AttributeError, usb.core.USBError):
+                pass
 
 
 def finder(log=None, chunk=None, gap_ms=0):

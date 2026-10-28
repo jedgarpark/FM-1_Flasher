@@ -463,7 +463,7 @@ class Package:
         """The 16 KB of factory voice banks from the stock package's USR entry."""
         banks = [e for e in self.entries if e["type"] == 50 and e["name"] == "USR"]
         check(len(banks) == 1 and banks[0]["size"] == 73226 and banks[0]["encrypted"] == 73248,
-              "invalid factory voice data")
+              "invalid factory voice data (layout)")
         e = banks[0]
         # One up-front allocation: growing and copying 16 KB fails on a fragmented
         # CircuitPython heap after a long install.
@@ -480,8 +480,24 @@ class Package:
                 k = min(len(block), 16384 - pos)
                 out[pos:pos + k] = block[:k]
                 pos += k
-        check(c == e["crc"] and pos == 16384, "invalid factory voice data")
+        check(c == e["crc"] and pos == 16384, "invalid factory voice data (CRC)")
         return out
+
+
+def check_sha256(compute, expected, text, tries=3):
+    """check() that compute() gives `expected`, recomputing after a mismatch.
+    CircuitPython 11's hashlib can return a wrong digest with no error
+    (DEVNOTES 6.7, 6.9). A wrong digest never matches by chance, so any
+    match can be trusted, and only a repeated mismatch fails. compute()
+    returns None when there is no hashlib."""
+    for attempt in range(tries):
+        digest = compute()
+        if digest is None or digest == expected:
+            return
+        # All zeros: the hash failed outright, and hashlib didn't say so
+        print("SHA-256 %s, try %d of %d (%s): %s" % ("failed" if digest == "0" * 64 else "mismatch",
+                                                     attempt + 1, tries, text, digest))
+    check(False, text)
 
 
 def file_sha256(f, step=4096):
@@ -529,17 +545,27 @@ def prepare(meta, f, verify=True):
     pkg = Package(f)
     check(pkg.file_size == meta["bytes"], "package size does not match metadata")
     if verify:
-        digest = file_sha256(f)
-        check(digest is None or digest == meta["sha256"], "package SHA-256 check failed")
+        check_sha256(lambda: file_sha256(f), meta["sha256"], "package SHA-256 check failed")
     pkg.inspect(verify, strict=not community)
     check(pkg.product == product, "package identity does not match metadata")
-    loader = pkg.loader_sha256()
-    check(loader is None or loader == meta["loader_sha256"], "loader does not match metadata")
+    check_sha256(pkg.loader_sha256, meta["loader_sha256"], "loader does not match metadata")
     if stock and verify:
-        h = sha256()
-        if h is not None:
-            h.update(pkg.factory_bank())
-            check(hexstr(h.digest()) == FACTORY_SHA256, "invalid factory voice data")
+        bank = pkg.factory_bank()
+
+        def bank_sha256():
+            h = sha256()
+            if h is None:
+                return None
+            # 1 KB at a time: as one 16 KB update() the digest came back all
+            # zeros, every try, on a fragmented heap (DEVNOTES 6.9). mbedtls
+            # may copy each update's input to a temporary buffer.
+            mv = memoryview(bank)
+            for i in range(0, len(bank), 1024):
+                h.update(mv[i:i + 1024])
+            return hexstr(h.digest())
+
+        check_sha256(bank_sha256, FACTORY_SHA256, "invalid factory voice data (SHA-256)")
+        del bank
     meta = dict(meta)
     meta["loader_identity"] = loader_identity(meta)
     return pkg, meta
