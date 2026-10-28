@@ -9,8 +9,11 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 ## Hardware
 
 - **Adafruit Feather RP2040 USB Host.** The CircuitPython build must include the TinyUSB enumeration retry and the 512-byte enumeration buffer (`patches/`).
-- **Adafruit USB Host FeatherWing, MAX3421E ([PID 5858](https://www.adafruit.com/product/5858))**: the USB host for the FM-1, on CS D10, IRQ D9 and `board.SPI()`. The Feather's built-in PIO USB-A port works too, but leaves the FM-1 silent (stuck in USB host role) after some attaches (DEVNOTES §4.7–4.8, §6.6).
-- **TFT FeatherWing V2 3.5" 480x320, capacitive touch ([PID 5872](https://www.adafruit.com/product/5872)):** HX8357 display, touch, and microSD. Its TFT CS (D9) and DC (D10) clash with the MAX3421E wing; one board needs rework before Phase 4.
+- **USB host for the FM-1**, one of:
+  - **The Feather's built-in PIO USB-A port with a long cable** (2 m tested, Adafruit 6279), on CircuitPython 11 with `cp11-feather-pio.diff` and `pico-pio-usb-cp11-idle-disconnect.diff`. A short cable leaves the FM-1 silent, stuck in USB host role (DEVNOTES §6.6–6.7).
+  - **A USB-A jack pigtail on D11/D12** (Adafruit 4449, 30 cm), with `cp11-feather-pigtail.diff` instead. Frees the built-in socket.
+  - **Adafruit USB Host FeatherWing, MAX3421E ([PID 5858](https://www.adafruit.com/product/5858))**, on CS D10, IRQ D9 and `board.SPI()` (DEVNOTES §4.8). Fine with short cables, but clashes with the TFT FeatherWing.
+- **TFT FeatherWing V2 3.5" 480x320, capacitive touch ([PID 5872](https://www.adafruit.com/product/5872)):** HX8357 display, touch, and microSD. Its TFT CS (D9) and DC (D10) clash with the MAX3421E wing, but not with the PIO port or the pigtail.
 - An M-VAVE FM-1. Before any write, the recovery path is ready (see "Recovery").
 - Later: Fruit Jam port. Optional: 2.4" FeatherWing support behind the same display abstraction.
 
@@ -35,7 +38,7 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 
 ## Phase 2: Hardware spikes on the Feather (done)
 
-- **USB host:** use the MAX3421E wing with the patched CircuitPython (`patches/README.md`). **On CircuitPython 11**, the built-in PIO port needs only the 512-byte buffer and 120 MHz (`patches/cp11-feather-pio.diff`), because TinyUSB now retries enumeration itself. A full install ChoralRoot → V15 worked that way (DEVNOTES §6.5). The FM-1 can still come back silent after a reboot: it has switched to USB host role, which no host software can undo (DEVNOTES §6.6).
+- **USB host:** the MAX3421E wing with patched CircuitPython 10.3.1, or **on CircuitPython 11 the built-in PIO port** with the 512-byte buffer, 120 MHz and the Pico-PIO-USB disconnect check (`patches/README.md`). TinyUSB on 11 retries enumeration itself. On the PIO port the FM-1 needs a long cable (2 m tested) or the 30 cm D11/D12 pigtail: with a short cable it goes silent in USB host role (DEVNOTES §6.6–6.7). Full installs worked both ways.
 - **`fm1usb`:** USB-MIDI SysEx over `usb.core`, since `adafruit_usb_host_midi` can't write SysEx.
 - **Long SysEx:** verified with the stress test.
 - **`hashlib`:** sha256 is available only as `hashlib.new("sha256")`, which `fm1proto` handles.
@@ -55,7 +58,9 @@ It uses 64-byte paced writes with adaptive slow-down, and prints a ring of recen
 Open items:
 - [ ] Read packages from microSD instead of CIRCUITPY.
 - [ ] Verify the package sha256 once, when it's copied or prepared, and cache the result. That saves 8–12 s per install.
-- [ ] Handle the silent FM-1. If no FM-1 appears within ~10 s, at the start or after each self-reboot during an install, prompt for a power cycle instead of timing out.
+- [ ] Handle a missing FM-1. If none appears within ~10 s, at the start or after each self-reboot during an install, prompt the user (check the cable, power-cycle) instead of timing out.
+- [x] Retry the V15 voice restore once when V15 re-enumerates after its first boot (DEVNOTES §6.7).
+- [ ] CircuitPython 11 `hashlib` can give wrong digests on a fragmented heap (DEVNOTES §6.7). Until it's fixed, soft-reset before an install; then file it upstream with a repro.
 - [ ] Optionally start slowed for community firmware and loaders, to avoid the ~3 s loader retry when a reply is lost.
 - [ ] Fix the `RealCommunityPackages` test's folder layout (`FM1_TEST_PKGS`).
 - [ ] Update the upstream issue draft in `docs/`: the enumeration retry (TinyUSB) and the buffer size (CircuitPython). Post only after review.
@@ -66,7 +71,7 @@ Open items:
 - Progress bar driven by read-request addresses. Show "Restarting…" during re-enumeration, and the power-cycle prompt when the FM-1 doesn't reappear.
 - "Back to official V15".
 - Display and touch go behind a small abstraction.
-- Prerequisite: resolve the D9/D10 pin clash between the MAX3421E wing and the TFT FeatherWing.
+- Prerequisite with the MAX3421E wing only: resolve its D9/D10 pin clash with the TFT FeatherWing.
 
 ## Phase 5: Hardening, then extras
 

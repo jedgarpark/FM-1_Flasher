@@ -29,13 +29,17 @@ this file has the story and the evidence. Dates are 2026.
 - It needs a **custom CircuitPython 10.3.1** with two changes, a TinyUSB
   enumeration retry and a 512-byte enumeration buffer (`patches/`, see
   [§5](#5-patch-verdicts)).
-- The Feather's **built-in USB-A host port** (PIO-USB) also works with those
-  changes, but it is unreliable with the FM-1: 70–80 % of attaches succeed, and
-  the FM-1 sometimes goes silent. A silent FM-1 has switched to USB host
-  role; only a standard host such as the Mac brings it back reliably
-  ([§6.6](#66-what-the-silent-state-is-oct-27)).
-- Not started: the touchscreen UI (Phase 4). That needs the MAX3421E wing's
-  D9/D10 to be moved, because the TFT FeatherWing uses the same pins.
+- The Feather's **built-in USB-A host port** (PIO-USB) works too, on a
+  custom CircuitPython 11 (512-byte buffer, 120 MHz, Pico-PIO-USB disconnect
+  check), **if the FM-1's cable is long enough**. With a 2 m cable: 10 of 10
+  power cycles and two full installs. With a short cable the FM-1 goes
+  silent: it switches to USB host role
+  ([§6.6](#66-what-the-silent-state-is-oct-27),
+  [§6.7](#67-cable-length-decides-it-oct-27)). A 30 cm USB-A pigtail on D11/D12
+  works the same way, which leaves D9/D10 free.
+- Not started: the touchscreen UI (Phase 4). With the MAX3421E wing, its
+  D9/D10 must be moved, because the TFT FeatherWing uses the same pins; the
+  PIO port avoids that.
 
 ---
 
@@ -328,7 +332,7 @@ cycles on the Feather, about 17,400 transactions.
 |---|---|---|---|
 | Root-port enumeration retry | TinyUSB `usbh.c` | **Required on 10.3.1; built in on 11** | 11/11 attaches failed once, then succeeded on retry (and 15/15 on MAX3421E). CircuitPython 11's TinyUSB has its own retry (`CFG_TUH_ENUM_ATTEMPT_MAX` = 2) |
 | `CFG_TUH_ENUMERATION_BUFSIZE=512` | board `mpconfigboard.mk` | **Required** | 293-byte descriptor > 288 default |
-| Disconnect check while waiting for reset | Pico-PIO-USB | Keep (PIO only) | Never fired in the instrumented runs; guards the stuck-"connected" race from §4.5 |
+| Disconnect check while waiting for reset | Pico-PIO-USB | **Required** (PIO only), on 10.3.1 and 11 | Guards the stuck-"connected" race from §4.5. On CircuitPython 11 without it, the port never enumerated a role-detecting FM-1; with it, 4 firings in one 2 m-cable run (§6.7) |
 | 20-frame disconnect debounce | Pico-PIO-USB | Keep (PIO only) | Absorbed one 1-frame SE0 glitch on a live connection |
 | FS reply timeout 3 → 20 µs | Pico-PIO-USB | **Not needed** | Longest wait 1 µs; none over 3 µs |
 | 120 MHz system clock | board CFLAGS | **Required** on the PIO port | At the stock 125 MHz, ~30 % of OUT writes fail on CircuitPython 11; 0/100 at 120 MHz (§6.5) |
@@ -448,7 +452,7 @@ the Feather's own USB-A port.
 - **The enumeration buffer is still 288 bytes,** so 512 is still required. Stock
   V15 (293-byte descriptor) enumerated with it.
 - **Pico-PIO-USB still has no disconnect check while waiting for reset.**
-  Nothing in these tests needed it.
+  Nothing in these tests needed it, but §6.7 did: it's still required.
 
 **Results with only the 512-byte change, at the stock 125 MHz:**
 - Power cycles and hot-plugs (FM-1 running ChoralRoot): about 12 of 15 mounted,
@@ -554,7 +558,113 @@ still a suspect too. A possible fix for the built-in port, **untested**: 15 kΩ
 from D+ and D− to ground on the Feather.
 
 **For the flasher:** no host software fix exists; it's the FM-1's role
-decision. The MAX3421E wing stays the hardware (§4.8).
+decision. The MAX3421E wing stays the hardware (§4.8). (§6.7: a longer cable
+avoids it.)
+
+### 6.7 Cable length decides it (Oct 27)
+
+**Setup.** CircuitPython 11.0.0-alpha.2 with the 512-byte buffer, 120 MHz and
+the Pico-PIO-USB disconnect check (`patches/pico-pio-usb-cp11-idle-disconnect.diff`).
+For other pins, the board doesn't claim GPIO16/17 at boot and the script
+calls `usb_host.Port(board.D11, board.D12)` (`patches/cp11-feather-pigtail.diff`).
+`device/fm1_cycle_watch.py` takes `FM1_DP` for the pin. The FM-1 was power-cycled
+with its cable seated, as in §6.6.
+
+**A USB-A jack pigtail on D11/D12** (Adafruit 4449: a 30 cm, 28 AWG cable with
+a jack on one end and jumper sockets on the other, no parts):
+
+| Power | Series resistors | FM-1 firmware | Power cycles back | Silent |
+|---|---|---|---|---|
+| Mac 5 V (Feather USB pin) | none | V15 | 15 of 15 | 0 |
+| Boost, through a USB-A plug breakout (Adafruit 3628) in the Feather's socket | none | V15 | 13 of 13 | 0 |
+| Boost | 22 Ω | SLOOP | 5 of 5 | 0 |
+| Boost | 22 Ω | V15 | 14 of 14 | 0 |
+
+Installs over the pigtail: V15 → SLOOP in 72 s, and SLOOP → V15 in 69 s.
+The V15 voice restore had to be rerun separately, see below.
+
+Without the disconnect check, on boost power, the FM-1 ran its role-detect
+loop while the port sat "connected" from the first K phase and never
+enumerated it (§4.5). **So CircuitPython 11 still needs the disconnect check**
+on the PIO port, contrary to §6.5. In the long-cable run below it fired 4 times.
+
+**The built-in socket, with a second Feather** (a different board, same build
+but with the host port on GPIO16/17). All with the same FM-1 on V15:
+
+| Into the USB-A socket | Result |
+|---|---|
+| The usual short cable (with a ferrite bead), direct | Silent; D+ held low |
+| A known-good short cable, direct, from a state cleared on the Mac | Silent at once |
+| The same, with the socket's shell clipped to GND | Silent |
+| Bead cable → 4449 jack → jumpers → 3628 plug → socket | 10 of 10, then 5 of 5 with the good cable |
+| **A 2 m cable (Adafruit 6279), direct** | **10 of 10** |
+
+A third, plain cable turned out to be charge-only: the Mac didn't see the FM-1
+through it either. Its runs are left out.
+
+Over the 2 m cable on the built-in port: V15 → ChoralRoot 0.27 in 71 s, and
+ChoralRoot → V15 in 69 s.
+
+**What this rules out:**
+- the individual board (two Feathers behave alike)
+- the boost and fuse (fine through the pigtail and the 2 m cable)
+- the socket, its traces, GPIO16/17 and the 22 Ω resistors (fine through the
+  chain and the 2 m cable)
+- the 22 Ω resistors on their own (fine on the pigtail)
+- the cable's shield: the socket's shell lugs (MT1/MT2) are unconnected in
+  the board file, but grounding the shell didn't help
+- the FM-1 firmware (V15 and SLOOP both fine)
+
+What's left is **length**: every PIO-port setup that worked had at least ~30 cm
+more cable between the socket and the FM-1, and every short direct cable failed.
+That changes capacitance and inductance on all four lines, the data pair and
+VBUS/GND alike. Which one matters, and how, is unmeasured. Two things don't
+fit yet:
+- the MAX3421E wing was fine with the short bead cable (§4.8)
+- on earlier days that bead cable worked 7–8 times in 10 on this port (§4.7),
+  where today it never did
+
+**Cable readings** (TREEDIX cable tester, end to end):
+
+| Cable | CC1 | CC2 | VBUS–GND | Shell–GND | On the PIO port |
+|---|---|---|---|---|---|
+| Short, ferrite bead | 56k up | open | ~0.2 Ω | short | Silent, stays silent |
+| Short, yellow (charge-only) | 56k up | open | ~0.2 Ω | short | (no data) |
+| Blue 1 m (Adafruit, 1 m version of 6279) | 56k up | 56k up | 0.36 Ω | open | Went silent once, then recovered on a later power cycle (two detaches logged) |
+| Blue 2 m (Adafruit 6279) | 56k up | 56k up | 1.3 Ω | open | 10 of 10 |
+
+The blue cables put the 56k Rp on both CC lines, so the FM-1 sees it in
+either orientation. That suggested a CC-orientation cause: the FM-1 sensing
+one CC pin and falling back to D+/D− role detection without Rp. **Ruled out:**
+- the bead cable went silent on the Feather with the USB-C end either way round;
+- on the Mac it enumerated either way round;
+- the 1 m blue cable, with the same CC wiring as the 2 m, still went silent.
+
+The shield doesn't track success either: the bead cable ties it to GND, the
+blue cables leave it open.
+
+So the effect grows with cable length and resistance: short cables stay silent,
+1 m recovers, 2 m and the +30 cm chain never go silent. A silent FM-1 on the
+Mac also came back only after a USB-C replug, not on its own.
+
+**V15 re-enumerates once after its first boot.** In both V15 installs (pigtail
+and 2 m cable), the FM-1 came back as `FM-1_015`, answered the installer's
+identity check, then dropped off the bus about 4 s later. The voice restore's
+first query failed with a `USBError`. Run separately, the restore took 1.8 s.
+`Updater` now retries the restore once after waiting for V15 to come back
+(`_restore_after_boot`), with a simulator test (`reenum_after_boot`). On the
+device (2 m cable): SLOOP → V15 with voices in one run, 82 s; V15 was found
+again 7 s after it dropped, and the restore took 1.8 s.
+
+**CircuitPython 11's `hashlib` gave wrong SHA-256 digests** on a fragmented
+heap. The package check failed with "invalid factory voice data" although the
+same file and code passed on the Mac. Repeated runs of `prepare` failed after
+the first; once, a `gc.collect()` between two `update()` calls gave a wrong
+digest. After a soft reset, 24 of 24 cases passed. 11.0.0-alpha.2 moved
+`hashlib` to mbedtls 4.2's PSA API, and `shared-module/hashlib/Hash.c` ignores
+the return codes of `psa_hash_update` and `psa_hash_clone`, so a failure would
+be silent. Workaround: soft-reset before an install. Needs a proper repro
+before an upstream issue.
 
 ---
 
@@ -609,21 +719,22 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 | The GPIO18 tests may not have removed VBUS, because the boost might not disconnect its output | It does disconnect (EN < 0.4 V turns the output fully off), so the tests were valid: removing VBUS for 2–5 s doesn't wake a silent FM-1 |
 | VBUS is not involved at all | Removing VBUS from a silent FM-1 doesn't help, but only the built-in port (boost + fuse) produces the silent state; the Pico on Mac 5 V and the MAX3421E don't. Conditions at plug-in or power-on are still a suspect, though unproven |
 | A host reset clears the silent state; the host side is stuck (§6.5) | The host is fine: the silent FM-1 is in USB host role with D+ pulled down. Feather resets work only sometimes (§6.6) |
-| The silent state comes from the port's power path or termination (§4.8) | Partly: it's the FM-1 choosing host role. What makes it choose that on this port is still open |
+| The silent state comes from the port's power path or termination (§4.8) | It's the FM-1 choosing host role (§6.6), and on the PIO port it happens with short cables. The boost, the 22 Ω resistors and the board are cleared (§6.7) |
+| CircuitPython 11 doesn't need the Pico-PIO-USB disconnect check (§6.5) | It does: without it the port can stay "connected" to a role-detecting FM-1 and never enumerate it (§6.7) |
+| Grounding the cable shield at the host end prevents the silent state (Oct 27 hypothesis) | It didn't; the cable's length is what mattered (§6.7) |
 
 ---
 
 ## 9. Open questions
 
-- **Why does the FM-1 pick host role** on the Feather's built-in port
-  (§6.6)? Suspects:
-  - the 22 Ω/no-pull-down termination (would 15 kΩ pull-downs fix it?)
-  - the TPS61023 boost and fuse during the FM-1's current surge at plug-in or
-    power-on
-
-  It's decided at that moment: once the FM-1 is silent, removing VBUS doesn't
-  undo it. No measurement yet. A LiPo won't help while USB is connected,
-  because Q3 switches the battery out of VHI.
+- **Why does a short cable make the FM-1 pick host role** on the PIO port,
+  when ~30 cm more avoids it (§6.7)? Is it the data lines or VBUS/GND? Why
+  is the MAX3421E fine with a short cable, and why did the same short cable
+  work 7–8 times in 10 on earlier days? It scales with length (§6.7: 0.2 Ω
+  fails, 0.36 Ω recovers, 1.3 Ω never fails). Next: a short cable with ~1 Ω
+  in series in VBUS only, to separate power from the data lines.
+- **CircuitPython 11 `hashlib`** wrong digests on a fragmented heap (§6.7):
+  needs a standalone repro for an upstream issue.
 - **Why does the MAX3421E lose multi-packet OUT bursts** to the FM-1's loaders
   and the busy SLOOP app, when the Mac doesn't? The NAK-handling theory is
   unproven.

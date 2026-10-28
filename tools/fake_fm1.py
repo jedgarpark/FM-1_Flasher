@@ -25,7 +25,8 @@ class FakeFM1:
     def __init__(self, pkg, clock, identity="FM1_OFFICIAL_OPEN", build="00" * 32, capability=True,
                  loader_identity="ota-FM-1_015", new_identity=None, new_build=None,
                  reenum_ms=3000, duplicate_finish=1, noise=False, chunk=512,
-                 lossy_over=None, lossy_modes=("app", "loader"), retry_ms=3000, retries=2):
+                 lossy_over=None, lossy_modes=("app", "loader"), retry_ms=3000, retries=2,
+                 reenum_after_boot=None):
         self.pkg = pkg
         self.clock = clock
         self.identity = identity
@@ -47,6 +48,10 @@ class FakeFM1:
         self.retry_ms = retry_ms
         self.retries = retries
         self.retries_left = retries
+        # Stock V15 re-enumerates once shortly after its first boot: the device
+        # drops off the bus on this many-th message after booting the new app.
+        self.reenum_after_boot = reenum_after_boot
+        self.boot_messages = None
         self.last_req_at = 0
         self.mode = "app"
         self.generation = 0
@@ -71,6 +76,7 @@ class FakeFM1:
         self.requests = []
         self.log.append(("reset", mode))
         if mode == "app":
+            self.boot_messages = 0 if self.reenum_after_boot else None
             self.identity = self.new_identity
             self.build = self.new_build
             self.has_cap = self.new_build is not None
@@ -122,6 +128,14 @@ class FakeFM1:
             self.log.append(("kick", self.mode))
             self._next_request(out)
             return
+        if self.boot_messages is not None:
+            self.boot_messages += 1
+            if self.boot_messages == self.reenum_after_boot:
+                self.boot_messages = None
+                self.generation += 1
+                self.available_at = self.clock.now_ms() + self.reenum_ms
+                self.log.append(("reenumerate",))
+                return
         p = P.parse(msg)
         if p is None:
             # The host sends frames in our reply format too; decode leniently.

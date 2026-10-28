@@ -14,13 +14,17 @@ behind each verdict.
 | `cp11-feather-pio.diff` | CircuitPython root (**11.0.0-alpha.2**) | The Feather's built-in PIO port on CircuitPython 11: `CFG_TUH_ENUMERATION_BUFSIZE=512` and 120 MHz. Nothing else is needed. | **Yes**, for CircuitPython 11 on the PIO port |
 | `pico-pio-usb-fm1.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` | Disconnect check while waiting for reset; 20-frame disconnect debounce; full-speed reply timeout 3 → 20 µs | Only for the built-in PIO port. Keep the first two; the timeout change isn't needed |
 | `pico-pio-usb-fm1-stats.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` | The same, plus counters (RX waits, absorbed glitches, disconnects) | Test builds only |
-| `pico-pio-usb-cp11-stats.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` (**11.0.0-alpha.2**) | Connect/disconnect counters for `device/fm1_cycle_watch.py`, plus the disconnect check while waiting for reset behind `FM1_IDLE_DISCONNECT` (default off) | Test builds only. The check made no difference to the silent state (DEVNOTES §6.6) |
+| `pico-pio-usb-cp11-idle-disconnect.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` (**11.0.0-alpha.2**) | Disconnect check while waiting for reset: a port marked connected but still waiting for its bus reset drops the device after 20 SE0 frames | **Yes**, for the PIO port on CircuitPython 11 (DEVNOTES §6.7) |
+| `cp11-feather-pigtail.diff` | CircuitPython root (**11.0.0-alpha.2**) | `cp11-feather-pio.diff` plus `FM1_NO_DEFAULT_HOST`: the board doesn't claim GPIO16/17 at boot, so a script can call `usb_host.Port(board.D11, board.D12)` for a USB-A pigtail | Only for the pigtail option |
+| `pico-pio-usb-cp11-stats.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` (**11.0.0-alpha.2**) | Connect/disconnect counters for `device/fm1_cycle_watch.py`, plus the disconnect check behind `FM1_IDLE_DISCONNECT` (default off) | Test builds only; use instead of the patch above |
 
 **On CircuitPython 11** (11.0.0-alpha.2 and `main` as of 2026-10-27), TinyUSB
 already retries a failed enumeration, so the `tinyusb-*` patches aren't needed.
-The PIO port needs only `CFG_TUH_ENUMERATION_BUFSIZE=512` and 120 MHz. Those
-are the same lines as `feather-enum-bufsize.diff` plus the clock flags below,
-added to the board's `mpconfigboard.mk`.
+The PIO port needs `CFG_TUH_ENUMERATION_BUFSIZE=512` and 120 MHz
+(`cp11-feather-pio.diff`, the same lines as `feather-enum-bufsize.diff` plus
+the clock flags below), and the Pico-PIO-USB disconnect check
+(`pico-pio-usb-cp11-idle-disconnect.diff`). Connect the FM-1 through a long
+enough cable: short cables leave it silent (DEVNOTES §6.7).
 
 The 120 MHz clock (`-DSYS_CLK_HZ=120000000 -DPLL_SYS_VCO_FREQ_HZ=1440000000
 -DPLL_SYS_POSTDIV1=6 -DPLL_SYS_POSTDIV2=2`) gives Pico-PIO-USB integer clock

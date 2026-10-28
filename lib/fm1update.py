@@ -366,6 +366,19 @@ class Updater:
                 self.status(phase, (offset + 512) * 99 // 16384)
         check(P.identity(self.link.query(P.CMD_IDENTITY)) == P.STOCK_PRODUCT, "restoring voices needs stock V15")
 
+    def _restore_after_boot(self):
+        """V15 re-enumerates once a few seconds after its first boot, which drops
+        the link early in the restore. Wait for it to come back and start over."""
+        try:
+            self.restore_factory()
+        except (FM1Error, OSError):  # OSError covers usb.core.USBError
+            if self.trace:
+                self.trace("restore-retry")
+            self.disconnect()
+            self.clock.sleep_ms(self.timing["restart_wait"])
+            self.wait_for(P.STOCK_PRODUCT)
+            self.restore_factory()
+
     def _install_community(self):
         t = self.timing
         if self.mode != "loader":
@@ -429,7 +442,7 @@ class Updater:
             if stock:
                 check(P.identity(self.link.query(P.CMD_IDENTITY)) == self.meta["product"],
                       "restarted, but the firmware identity does not match")
-                self.restore_factory()
+                self._restore_after_boot()
             else:
                 after = P.capability(self.link.query(P.CMD_CAPABILITY))
                 check(after["family"] == self.meta["family"] and after["build"] == self.meta["build_id"]
