@@ -42,9 +42,9 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - **`fm1usb`:** USB-MIDI SysEx over `usb.core`, since `adafruit_usb_host_midi` can't write SysEx.
 - **Long SysEx:** verified with the stress test.
 - **`hashlib`:** sha256 is available only as `hashlib.new("sha256")`, which `fm1proto` handles.
+- **TFT FeatherWing:** works next to the PIO port. Display, touch and full installs with the console on the screen (DEVNOTES §6.8).
 - **Not yet checked:**
   - **Battery operation.** With USB connected, the LiPo is switched out of the boost input, so only a battery-only test is meaningful.
-  - **Pin conflicts with the TFT FeatherWing.**
 
 ## Phase 3: Install path on device
 
@@ -70,7 +70,8 @@ Open items:
 - Firmware list, details screen, and Install, with an extra confirmation for legacy routes.
 - Progress bar driven by read-request addresses. Show "Restarting…" during re-enumeration, and the power-cycle prompt when the FM-1 doesn't reappear.
 - "Back to official V15".
-- Display and touch go behind a small abstraction.
+- Display and touch go behind a small abstraction. FT5336 touch points are native portrait; map them to the 480x320 landscape frame.
+- Keep console printing off the screen during installs; it slowed the voice restore from 1.8 s to 6.6 s (DEVNOTES §6.8).
 - Prerequisite with the MAX3421E wing only: resolve its D9/D10 pin clash with the TFT FeatherWing.
 
 ## Phase 5: Hardening, then extras
