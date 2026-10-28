@@ -56,7 +56,19 @@ class Font:
             self.ascent, self.descent, self.cap = head[4], head[5], head[6]
             self.count = head[8] | (head[9] << 8)
             sheet_w = head[10] | (head[11] << 8)
-            self.table = f.read(8 * self.count)
+            self.table = bytearray(f.read(8 * self.count))
+            # Give each glyph at least the room its ink takes. Advances are
+            # rounded per glyph, and the 1-bit "m" of inter-regular-14 ends
+            # 1 px past its advance: "from the" read as "fromthe". Not in the
+            # monospace font, whose columns must stay even.
+            t = self.table
+            proportional = t[(ord("i") - 32) * 8 + 6] != t[(ord("m") - 32) * 8 + 6]
+            for o in range(0, len(t) if proportional else 0, 8):
+                left = t[o + 5] - 256 if t[o + 5] > 127 else t[o + 5]
+                if t[o + 4] and left + t[o + 4] > t[o + 6]:
+                    t[o + 6] = left + t[o + 4]
+            if proportional:
+                t[6] += 1  # and 1 px more word space (row 0 is the space)
             self.height = self.ascent + self.descent
             self.sheet = displayio.Bitmap(sheet_w, self.height, 2)
             bitmaptools.readinto(self.sheet, f, 1, reverse_pixels_in_element=True)  # MSB first
