@@ -441,11 +441,11 @@ class ProgressScreen(Screen):
         self._bar(pct)
         self.redraw()
 
-    def wait(self, what):
+    def wait(self, what, note="Waiting for the FM-1 to restart..."):
         """The installer is waiting for the FM-1 to come back."""
         self.waiting_since = time.monotonic()
         self.note.color = ui.WARN
-        self.note.set("Waiting for the FM-1 to restart...")
+        self.note.set(note)
         self.redraw(force=True)
 
     def found(self):

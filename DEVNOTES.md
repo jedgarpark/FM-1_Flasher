@@ -685,6 +685,41 @@ I2C) touches GPIO16–18.
   scrolling: the voice restore, which prints a line per step, took 6.6 s
   instead of 1.8 s. A real UI that redraws a progress bar should cost less.
 
+### 6.9 First install from the touch UI (Oct 28)
+
+Feather 2, TFT FeatherWing, 2 m cable, built-in PIO port. The UI starts an
+install by saving the slug in NVM and soft-reloading, so the install runs on
+a fresh heap. Three failures before V15 → SLOOP worked (84.4 s, no resends):
+
+- **After a soft reload the FM-1 misses the first query or two.** It isn't
+  reset by the reload and stays enumerated. The installer's two identity
+  tries ran out: "no FM-1 answered". Watching from the REPL: no answer to
+  the first two queries, then every one answers.
+- **Reopening the endpoints each try never gets an answer.** A wait loop
+  that opened a transport, queried, then released it (`deinit()`) got no
+  reply in 15 s. Without a reload, fresh transports answer at once, even
+  after `deinit()`. Unproven guess: a data-toggle mismatch that each reopen
+  restores. The fix keeps one transport for the whole wait (answered on
+  query 3) and hands it to the installer.
+- **A garbage-collected `usb.core.Device` closes the endpoints it opened,**
+  and endpoints belong to the device address, not the object
+  (`shared-module/usb/core/Device.c`, `__del__` → `tuh_edpt_close`). Device
+  objects dropped by an earlier probe were collected 2 s into staging and
+  closed endpoint 0x04 under the installer: Pico-PIO-USB printed
+  `no endpoint 0x04` and the reply write failed with `USBError`. The
+  transport's `close()` now calls `device.deinit()`, and nothing drops a
+  Device it has used without closing it.
+
+Also seen, not yet explained:
+- **White screen:** once after replugging the FM-1 during a failed install.
+  The code was still running (Ctrl-C found it polling touch).
+- **Unresponsive Feather:** once on the list screen, before the transport
+  fixes. Serial ignored Ctrl-C, but CIRCUITPY was still readable. A reset
+  cleared it.
+- **Unreadable disk prompt:** after a hard reset the Mac called the SD card's
+  drive unreadable (Eject is safe). Probably shown over USB before `code.py`
+  mounts the card.
+
 ---
 
 ## 7. Tools and techniques worth reusing

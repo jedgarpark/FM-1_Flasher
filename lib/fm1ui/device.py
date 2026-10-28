@@ -33,6 +33,7 @@ W, H = 480, 320
 # (ax, bx, ay, by): x = ax * raw_y + bx, y = ay * raw_x + by
 TOUCH_CAL = (1.077, -17.7, -1.087, 321.2)
 NVM_TAG = b"FM1P"
+ANSWER_WAIT_S = 15  # for the FM-1 to answer again after the install's reload
 
 
 def display_setup():
@@ -162,11 +163,21 @@ def query_identity(transport, ms=750):
 
 class Probe:
     """The attached FM-1's identity. It is asked only when the set of USB
-    devices changes, or after a failed attempt, so an idle FM-1 sees no traffic."""
+    devices changes, or after a failed attempt, so an idle FM-1 sees no traffic.
+    The transports stay open until the devices change: after a reload the
+    FM-1 answers only once a transport has had a query or two (see
+    wait_for_fm1)."""
 
     def __init__(self):
         self.key = None
+        self.devices = None
         self.ident = None
+        self.found = []
+
+    def close(self):
+        for t in self.found:
+            t.close()
+        self.found = []
 
     def identity(self):
         try:
@@ -175,22 +186,22 @@ class Probe:
             return self.ident
         if key == self.key:
             return self.ident
+        if key != self.devices or any(t.lost for t in self.found):
+            self.close()
+            self.devices = key
         self.ident = None
         self.key = key
         if not key:
             return None
-        found = []
         try:
-            for t in fm1usb.finder(None, 64, 0)():
-                found.append(t)
+            if not self.found:
+                self.found = fm1usb.finder(None, 64, 0)()
+            for t in self.found:
                 ident = query_identity(t) or query_identity(t)  # one retry, as the installer does
                 if ident:
                     self.ident = ident
         except (usb.core.USBError, OSError, ValueError):
-            pass
-        finally:
-            for t in found:
-                t.close()
+            self.close()
         if self.ident is None:
             self.key = None  # ask again next time
         return self.ident
@@ -250,14 +261,62 @@ class Installer:
         if _nvm_write(NVM_TAG, 0, entry.slug.encode()):
             supervisor.reload()
         else:  # no NVM: install in place
+            if app.probe is not None:
+                app.probe.close()  # its transports would share the installer's endpoints
             run(app, entry)
 
     def finish(self, app):
         supervisor.reload()
 
 
+def wait_for_fm1(screen, seconds=ANSWER_WAIT_S):
+    """The transport of an FM-1 that answers an identity query, or None.
+
+    After a reload the first query or two on the FM-1 get no reply, then it
+    answers at once, but only on the same transport: reopening each try
+    (endpoints closed and opened again) never got an answer in 15 s
+    (logs/ui-install1.log). So one transport is kept for the whole wait,
+    and the installer is handed that same one."""
+    t0 = time.monotonic()
+    waiting = False
+    t = None
+    tries = 0
+    while time.monotonic() - t0 < seconds:
+        try:
+            if t is None or t.lost:
+                if t is not None:
+                    t.close()
+                found = fm1usb.finder(None, 64, 0)()
+                for other in found[1:]:
+                    other.close()
+                t = found[0] if found else None
+            if t is not None:
+                tries += 1
+                ident = query_identity(t)
+                if ident:
+                    print("install: %s answered after %.1f s, query %d" % (ident, time.monotonic() - t0, tries))
+                    if waiting:
+                        screen.found()
+                    return t
+        except (usb.core.USBError, OSError, ValueError) as e:
+            print("install: waiting:", repr(e))
+            if t is not None:
+                t.close()
+            t = None
+        if not waiting:
+            screen.wait("connect", "Waiting for the FM-1 to connect...")
+            waiting = True
+        screen.tick(time.monotonic())
+        time.sleep(0.25)
+    if t is not None:
+        t.close()
+    print("install: no FM-1 answered in %d s (%d queries)" % (seconds, tries))
+    return None
+
+
 def run(app, entry):
-    """Install `entry` with a progress screen. Returns True on success."""
+    """Install `entry` with a progress screen. Returns True on success.
+    Stages, waits and errors also go to the serial console."""
     import fm1proto as P
     import fm1update as U
     from fm1ui import screens as S
@@ -276,8 +335,18 @@ def run(app, entry):
     screen = S.ProgressScreen(app, entry)
     app.push(screen)
     folder = app.root + "/" + entry.slug
+    t0 = time.monotonic()
+    last = [None]
+
+    def status(name, pct):
+        if name != last[0]:  # one line per stage, not per percent
+            last[0] = name
+            print("install: %.1f s %s" % (time.monotonic() - t0, name))
+        screen.phase(name, pct)
+
+    print("install:", entry.slug)
     try:
-        screen.phase("Checking package", 0)
+        status("Checking package", 0)
         with open(folder + "/meta.json") as f:
             meta = json.load(f)
         pkg_file = open(folder + "/" + meta["file"], "rb")
@@ -288,16 +357,29 @@ def run(app, entry):
                 screen.wait(values[0])
             elif event == "found":
                 screen.found()
+            if event != "read":
+                print("install: %.1f s trace" % (time.monotonic() - t0), event, *values)
 
-        up = U.Updater(fm1usb.finder(None, 64, 0), pkg, meta, status=screen.phase, clock=UIClock(screen))
+        status("Connecting", 0)
+        held = [wait_for_fm1(screen)]
+        fresh = fm1usb.finder(None, 64, 0)
+
+        def finder():
+            # The first search gets the transport that already answered; any
+            # later one (after the FM-1 restarts) finds new devices.
+            t, held[0] = held[0], None
+            return [t] if t is not None and not t.lost else fresh()
+
+        up = U.Updater(finder, pkg, meta, status=status, clock=UIClock(screen))
         up.trace = trace
-        screen.phase("Connecting", 0)
-        up.connect(force=True)
+        print("install: connect", up.connect(force=True))
         up.install(force=True)
         up.disconnect()
         app.state.record_install(entry.slug, meta["product"])
+        print("install: done in %.1f s" % (time.monotonic() - t0))
         screen.finish(True, "The FM-1 restarted with %s." % entry.name)
         return True
     except Exception as e:  # FM1Error, USBError, OSError
+        print("install: failed after %.1f s:" % (time.monotonic() - t0), repr(e))
         screen.finish(False, str(e) or repr(e))
         return False
