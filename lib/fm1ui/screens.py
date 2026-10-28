@@ -430,8 +430,8 @@ class ConfirmScreen(Screen):
             text = ("This puts back M-VAVE's official firmware and its factory voices, "
                     "replacing %s." % running)
         elif ident == STOCK_PRODUCT:
-            text = ("The FM-1 runs M-VAVE's official V15. %s replaces it; the M-VAVE V15 card "
-                    "puts it back any time." % e.name)
+            text = ("The FM-1 runs M-VAVE's official V15. %s replaces it. To go back, install "
+                    "M-VAVE V15 from the list at any time." % e.name)
         else:
             text = "%s replaces %s on the FM-1." % (e.name, running)
         return True, text + " Keep the FM-1 on and connected; it takes one to two minutes."
