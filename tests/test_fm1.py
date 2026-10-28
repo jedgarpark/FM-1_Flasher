@@ -172,6 +172,14 @@ class Packages(unittest.TestCase):
             with self.assertRaises(P.FM1Error):
                 P.Package(io.BytesIO(bytes(bad))).inspect()
 
+    def test_prepare_checked_trusts_the_sha256(self):
+        pkg, m = P.prepare(stock_meta(), io.BytesIO(stock_bytes()), checked=True)
+        self.assertEqual(m["loader_identity"], "ota-FM-1_015")
+        data = bytearray(stock_bytes())
+        data[P.file_offset(pkg.flash["offset"] + 1000)] ^= 0x40
+        with self.assertRaises(P.FM1Error):  # the SHA-256 still runs
+            P.prepare(stock_meta(), io.BytesIO(bytes(data)), checked=True)
+
     def test_prepare_rejects_bad_meta(self):
         data = stock_bytes()
         for change in ({"family": 6}, {"bytes": 1}, {"sha256": "0" * 64}, {"loader_sha256": "1" * 64},
