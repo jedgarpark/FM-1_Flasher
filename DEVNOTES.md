@@ -710,12 +710,30 @@ a fresh heap. Three failures before V15 → SLOOP worked (84.4 s, no resends):
   transport's `close()` now calls `device.deinit()`, and nothing drops a
   Device it has used without closing it.
 
-Also seen, not yet explained:
+Then SLOOP → V15 with factory voices, 84.5 s, no resends. SLOOP answered
+the first identity query after the reload, so the missed queries may be
+V15's.
+
+Also seen:
+- **"invalid factory voice data" once, on the first SLOOP → V15 attempt.**
+  It failed in the package check, before the FM-1 was touched, after a
+  34.5 s check (14.8 s when it passes). The whole-file and loader SHA-256s
+  passed. In the REPL, `prepare()` passed 3 of 3, and so did the voice
+  bank's CRC and SHA-256. With the heap filled to ~38 KB it raised a
+  plain `MemoryError` on the 16 KB voice buffer instead. The next UI
+  attempt, with 56.7 KB free, passed. The three checks behind that message
+  now say which failed (layout, CRC, SHA-256), and the install logs free
+  RAM. Suspect: the `hashlib` bug in §6.7. Free RAM on the list screen was
+  42 KB after a hard reset, 28–37 KB after soft reloads, so the install's
+  fresh heap varies.
 - **White screen:** once after replugging the FM-1 during a failed install.
-  The code was still running (Ctrl-C found it polling touch).
-- **Unresponsive Feather:** once on the list screen, before the transport
-  fixes. Serial ignored Ctrl-C, but CIRCUITPY was still readable. A reset
-  cleared it.
+  The code was still running (Ctrl-C found it polling touch). Not explained.
+- **Serial input stops if Ctrl-C arrives during a soft reboot.** Sending
+  Ctrl-D, then Ctrl-C ~0.6 s later, left `code.py` and the UI running but
+  the console accepting no input (writes time out). CIRCUITPY was still
+  readable. Only a reset cleared it. This happened twice, both from my
+  scripted keys, and it explains the earlier "unresponsive Feather". Wait
+  for `code.py` to start before sending Ctrl-C.
 - **Unreadable disk prompt:** after a hard reset the Mac called the SD card's
   drive unreadable (Eject is safe). Probably shown over USB before `code.py`
   mounts the card.

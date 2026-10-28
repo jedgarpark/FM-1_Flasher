@@ -463,7 +463,7 @@ class Package:
         """The 16 KB of factory voice banks from the stock package's USR entry."""
         banks = [e for e in self.entries if e["type"] == 50 and e["name"] == "USR"]
         check(len(banks) == 1 and banks[0]["size"] == 73226 and banks[0]["encrypted"] == 73248,
-              "invalid factory voice data")
+              "invalid factory voice data (layout)")
         e = banks[0]
         # One up-front allocation: growing and copying 16 KB fails on a fragmented
         # CircuitPython heap after a long install.
@@ -480,7 +480,7 @@ class Package:
                 k = min(len(block), 16384 - pos)
                 out[pos:pos + k] = block[:k]
                 pos += k
-        check(c == e["crc"] and pos == 16384, "invalid factory voice data")
+        check(c == e["crc"] and pos == 16384, "invalid factory voice data (CRC)")
         return out
 
 
@@ -539,7 +539,7 @@ def prepare(meta, f, verify=True):
         h = sha256()
         if h is not None:
             h.update(pkg.factory_bank())
-            check(hexstr(h.digest()) == FACTORY_SHA256, "invalid factory voice data")
+            check(hexstr(h.digest()) == FACTORY_SHA256, "invalid factory voice data (SHA-256)")
     meta = dict(meta)
     meta["loader_identity"] = loader_identity(meta)
     return pkg, meta

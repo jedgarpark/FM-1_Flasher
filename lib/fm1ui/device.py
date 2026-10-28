@@ -344,7 +344,9 @@ def run(app, entry):
             print("install: %.1f s %s" % (time.monotonic() - t0, name))
         screen.phase(name, pct)
 
-    print("install:", entry.slug)
+    import gc
+    gc.collect()
+    print("install:", entry.slug, "free RAM", gc.mem_free())
     try:
         status("Checking package", 0)
         with open(folder + "/meta.json") as f:
