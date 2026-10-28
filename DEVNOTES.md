@@ -715,17 +715,26 @@ the first identity query after the reload, so the missed queries may be
 V15's.
 
 Also seen:
-- **"invalid factory voice data" once, on the first SLOOP → V15 attempt.**
-  It failed in the package check, before the FM-1 was touched, after a
-  34.5 s check (14.8 s when it passes). The whole-file and loader SHA-256s
-  passed. In the REPL, `prepare()` passed 3 of 3, and so did the voice
-  bank's CRC and SHA-256. With the heap filled to ~38 KB it raised a
-  plain `MemoryError` on the 16 KB voice buffer instead. The next UI
-  attempt, with 56.7 KB free, passed. The three checks behind that message
-  now say which failed (layout, CRC, SHA-256), and the install logs free
-  RAM. Suspect: the `hashlib` bug in §6.7. Free RAM on the list screen was
-  42 KB after a hard reset, 28–37 KB after soft reloads, so the install's
-  fresh heap varies.
+- **"invalid factory voice data" in the package check: `hashlib` returned an
+  all-zero digest.** First seen on the first SLOOP → V15 attempt. Once the
+  three checks behind that message said which one failed, two MONK-1 → V15
+  attempts in a row both failed the voice bank's **SHA-256**, with ~53 KB
+  free. The bank's CRC had passed just before, and so had the whole-file and
+  loader SHA-256s. Recomputing didn't help: three tries in a row gave
+  `0000…0000`. So the hash failed outright and `hashlib` reported no error
+  (`shared-module/hashlib/Hash.c` ignores the PSA return codes, §6.7).
+  The bank was hashed as one 16 KB `update()`. The other hashes go 2–4 KB at a
+  time and never failed. Feeding the bank 1 KB at a time, MONK-1 → V15 passed
+  first try (97.2 s, voices restored), with the same free RAM. Likely cause,
+  not confirmed in the source: mbedtls's PSA layer copies each update's input
+  to a temporary buffer, and a 16 KB block doesn't fit a fragmented heap. That
+  also fits the REPL passing with 74 KB free. All three SHA-256 checks now
+  recompute after a mismatch (`check_sha256`: a wrong digest can't match by
+  chance), and the log says "failed" for an all-zero digest. For an upstream
+  issue: a 16 KB `update()` on a fragmented heap → silent all-zero digest.
+- **The package check takes 11–30 s.** Slow checks went with the failures,
+  but the passing V15 run above also took 26.8 s, so slowness alone isn't
+  the fault. Not explained.
 - **White screen:** once after replugging the FM-1 during a failed install.
   The code was still running (Ctrl-C found it polling touch). Not explained.
 - **Serial input stops if Ctrl-C arrives during a soft reboot.** Sending
