@@ -13,8 +13,13 @@ Sources:
                          packages install by the community route; FM1 Open
                          packages need --build-id
   --catalog [ID ...]     download from the FM-1 Firmware Hub catalogue
-                         (all firmwares, or only the given ids), verifying
-                         each package's SHA-256 against the catalogue
+                         (all firmwares plus stock V15, or only the given
+                         ids), verifying each package's SHA-256 against the
+                         catalogue, with the hub's card pictures as
+                         thumb.bmp/large.bmp (needs Pillow). Packages already
+                         on the card are reused when their SHA-256 matches.
+
+Every run rewrites firmware/index.txt, the list the device's UI reads.
 
 Examples:
   tools/make_sd.py --out /Volumes/FM1SD --fwsc ref/fm1_open/sdk/firmware/FM-1_015.fwsc \\
@@ -48,28 +53,116 @@ def fetch(url):
         return r.read()
 
 
-def from_catalog(ids):
-    cat = json.loads(fetch(HUB + "catalog.json"))
+def catalog_entries(cat, ids):
+    """The catalogue's firmwares (all, or only `ids`), with stock V15 first."""
     entries = [e for e in cat["firmwares"] if e.get("pkg")]
+    stock = cat.get("stock")
+    if stock and stock.get("pkg"):
+        entries.insert(0, dict(stock, id="stock-v15", name="M-VAVE V15", author="M-VAVE", version="V15",
+                               kind="official", lic="Apache-2.0",
+                               what="The FM-1's official firmware, with its factory voices restored "
+                                    "after the install."))
     if ids:
         known = {e["id"] for e in entries}
         missing = [i for i in ids if i not in known]
         if missing:
             sys.exit("not in the catalogue (or no package): " + ", ".join(missing))
         entries = [e for e in entries if e["id"] in ids]
-    out = []
-    for e in entries:
-        data = fetch(HUB + e["pkg"])
+    return entries
+
+
+def local_package(out, e):
+    """The package already on the card for catalogue entry `e`, if it matches."""
+    d = os.path.join(out, "firmware", e["id"])
+    try:
+        meta = json.load(open(os.path.join(d, "meta.json")))
+        if meta.get("sha256") == e["sha256"]:
+            return open(os.path.join(d, meta["file"]), "rb").read()
+    except (OSError, ValueError, KeyError):
+        pass
+    return None
+
+
+def from_catalog(ids, out):
+    cat = json.loads(fetch(HUB + "catalog.json"))
+    result = []
+    for e in catalog_entries(cat, ids):
+        data = local_package(out, e)
+        if data is None:
+            data = fetch(HUB + e["pkg"])
         if hashlib.sha256(data).hexdigest() != e["sha256"] or len(data) != e["size"]:
             print("skipping %s: download does not match the catalogue" % e["id"], file=sys.stderr)
             continue
+        kind = e.get("kind")
         meta = {"name": e.get("name") or e["id"], "author": e.get("author"), "version": e.get("version"),
                 "product": e["product"], "sha256": e["sha256"], "catalog_id": e["id"],
                 "source_url": e.get("source") or e.get("release") or
                 ("https://github.com/" + e["repo"] if e.get("repo") else None),
-                "genre": e.get("kind"), "beta": bool(e.get("beta")), "release_version": e.get("version")}
-        out.append((data, {k: v for k, v in meta.items() if v is not None}, e["id"]))
-    return out
+                "genre": ",".join(kind) if isinstance(kind, list) else kind, "beta": bool(e.get("beta")),
+                "release_version": e.get("version"), "description": e.get("what"),
+                "license": e.get("lic"), "date": e.get("date"), "installs": e.get("installs")}
+        result.append((data, {k: v for k, v in meta.items() if v is not None}, e["id"]))
+    return result, cat.get("updated")
+
+
+def thumbnails(d, cid):
+    """thumb.bmp (80 px) and large.bmp (160 px) from the hub's card picture,
+    as 8-bit indexed BMPs of 16 colours. The device reads them into a fixed
+    pool of 80x80 bitmaps (fm1ui.ui.slots), so large.bmp is stored as its four
+    80 px quarters stacked top to bottom (top left, top right, bottom left,
+    bottom right): an 80x320 strip. The pictures are mostly 480 px pixel art,
+    so 6x and 3x nearest-neighbour shrinks stay sharp."""
+    try:
+        from PIL import Image
+    except ImportError:
+        print("no Pillow: skipping thumbnails", file=sys.stderr)
+        return
+    try:
+        img = Image.open(io.BytesIO(fetch(HUB + "img/%s.png" % cid))).convert("RGB")
+    except Exception as e:  # no picture, or not an image
+        print("%s: no thumbnail (%s)" % (cid, e), file=sys.stderr)
+        return
+    side = max(img.size)
+    square = Image.new("RGB", (side, side), (0x0E, 0x0C, 0x0D))
+    square.paste(img, ((side - img.width) // 2, (side - img.height) // 2))
+    for name, px in (("thumb.bmp", 80), ("large.bmp", 160)):
+        resample = Image.NEAREST if side % px == 0 else Image.LANCZOS
+        small = square.resize((px, px), resample).quantize(16)
+        if px > 80:
+            strip = Image.new("P", (80, px * px // 80))
+            strip.putpalette(small.getpalette())
+            for i in range(px * px // 6400):
+                tx, ty = (i % (px // 80)) * 80, (i // (px // 80)) * 80
+                strip.paste(small.crop((tx, ty, tx + 80, ty + 80)), (0, 80 * i))
+            small = strip
+        small.save(os.path.join(d, name))
+
+
+def write_index(out, updated=None):
+    """firmware/index.txt: what the device's list screen reads, one tab-separated
+    line per firmware (slug, name, version, genre, beta, product), stock first,
+    then by name. The first line is the catalogue date."""
+    root = os.path.join(out, "firmware")
+    path = os.path.join(root, "index.txt")
+    if updated is None and os.path.exists(path):
+        updated = open(path).readline().rstrip("\n").partition("\t")[2] or None
+    rows = []
+    for slug in os.listdir(root):
+        try:
+            m = json.load(open(os.path.join(root, slug, "meta.json")))
+        except (OSError, ValueError):
+            continue
+        clean = lambda v: str(v).replace("\t", " ").replace("\n", " ")
+        rows.append((m.get("kind") != "stock", m.get("name", slug).lower(),
+                     "\t".join(clean(v) for v in (slug, m.get("name", slug), m.get("version", ""),
+                                                  m.get("genre") or m.get("kind", ""),
+                                                  1 if m.get("beta") else 0, m["product"]))))
+    rows.sort()
+    with open(path, "w") as f:
+        f.write("updated\t%s\n" % (updated or ""))
+        for row in rows:
+            f.write(row[2] + "\n")
+    return len(rows)
 
 
 def from_html(path):
@@ -149,14 +242,17 @@ def main(argv=None):
     ap.add_argument("--build-id", help="64-hex build identity for --fwsc")
     ap.add_argument("--slug", help="folder name under firmware/")
     ap.add_argument("--no-stock", action="store_true", help="with --html, skip the bundled V15")
+    ap.add_argument("--no-thumbnails", action="store_true", help="with --catalog, skip the card pictures")
     for k in EXTRA:
         ap.add_argument("--" + k.replace("_", "-"))
     args = ap.parse_args(argv)
 
     slugs = {}
+    updated = None
     if args.catalog is not None:
         items = []
-        for data, meta, cid in from_catalog(args.catalog):
+        found, updated = from_catalog(args.catalog, args.out)
+        for data, meta, cid in found:
             items.append((data, meta))
             slugs[id(meta)] = cid
     elif args.html:
@@ -183,8 +279,11 @@ def main(argv=None):
             meta["source_url"] = "https://github.com/m-vave/fm1_open"
             meta.setdefault("license", "Apache-2.0")
         d = write(args.out, data, meta, slug)
+        if meta.get("catalog_id") and not args.no_thumbnails:
+            thumbnails(d, meta["catalog_id"])
         print("%-20s %-12s %7d bytes  loader %s  -> %s" % (
             meta["product"], meta["kind"], meta["bytes"], meta["loader_identity"], d))
+    print("index: %d firmwares" % write_index(args.out, updated))
     if failed:
         sys.exit("%d package(s) rejected" % failed)
 
