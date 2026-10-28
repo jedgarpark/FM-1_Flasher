@@ -151,11 +151,16 @@ def crc16(data, c=0):
 def decode_header(data, key=0xFFFF):
     """XOR with the LFSR key stream. Returns a new bytearray."""
     p = bytearray(data)
+    _decode_into(p, 0, len(p), key)
+    return p
+
+
+def _decode_into(p, start, end, key):
+    """decode_header() on p[start:end] in place."""
     k = key
-    for i in range(len(p)):
+    for i in range(start, end):
         p[i] ^= k & 0xFF
         k = ((k << 1) ^ (0x1021 if k & 0x8000 else 0)) & 0xFFFF
-    return p
 
 
 # --- SysEx framing -----------------------------------------------------------
@@ -468,17 +473,23 @@ class Package:
         # One up-front allocation: growing and copying 16 KB fails on a fragmented
         # CircuitPython heap after a long install.
         out = bytearray(16384)
+        buf = bytearray(1024)
+        mv = memoryview(buf)
         pos = 0
         c = 0
-        remaining = e["size"]
-        for i in range(0, e["stored"], 32):
-            block = decode_header(self.read(e["offset"] + i, 32), 0x980F ^ ((e["offset"] + i) >> 2))
-            if remaining > 0:
-                c = crc16(block[:min(32, remaining)], c)
-                remaining -= 32
+        # Read 1 KB at a time and decode its 32-byte blocks in place: one read
+        # per block took 3.9 s on the RP2040, mostly seeks and allocations.
+        for i in range(0, e["stored"], 1024):
+            n = min(1024, e["stored"] - i)
+            self.read_into(e["offset"] + i, buf, n)
+            for b in range(0, n, 32):
+                _decode_into(buf, b, b + 32, 0x980F ^ ((e["offset"] + i + b) >> 2))
+            k = min(n, e["size"] - i)
+            if k > 0:
+                c = crc16(mv[:k], c)
             if pos < 16384:
-                k = min(len(block), 16384 - pos)
-                out[pos:pos + k] = block[:k]
+                k = min(n, 16384 - pos)
+                out[pos:pos + k] = mv[:k]
                 pos += k
         check(c == e["crc"] and pos == 16384, "invalid factory voice data (CRC)")
         return out
@@ -515,7 +526,7 @@ def file_sha256(f, step=4096):
     return hexstr(h.digest())
 
 
-def prepare(meta, f, verify=True):
+def prepare(meta, f, verify=True, checked=False):
     """Port of prepare(): validate meta.json against the package in f.
 
     kind is "open" (FM1 Open, WebUpdate.js rules), "stock" (M-VAVE V15), or
@@ -524,6 +535,9 @@ def prepare(meta, f, verify=True):
 
     verify=False skips whole-file SHA-256 and entry CRCs (slow on RP2040);
     use it only when the SD card was prepared and checked by tools/make_sd.py.
+    checked=True keeps the whole-file SHA-256 but, once it matches, skips the
+    entry CRCs and the factory voice checks: make_sd.py ran them on the same
+    bytes, and on the RP2040 they take 12 of the 14 seconds (DEVNOTES 6.10).
     Returns (Package, meta with loader_identity added).
     """
     kind = meta.get("kind")
@@ -546,6 +560,8 @@ def prepare(meta, f, verify=True):
     check(pkg.file_size == meta["bytes"], "package size does not match metadata")
     if verify:
         check_sha256(lambda: file_sha256(f), meta["sha256"], "package SHA-256 check failed")
+        if checked and sha256() is not None:
+            verify = False  # the SHA-256 matched, so these bytes passed make_sd.py
     pkg.inspect(verify, strict=not community)
     check(pkg.product == product, "package identity does not match metadata")
     check_sha256(pkg.loader_sha256, meta["loader_sha256"], "loader does not match metadata")

@@ -737,7 +737,7 @@ Also seen:
   issue: a 16 KB `update()` on a fragmented heap → silent all-zero digest.
 - **The package check takes 11–30 s.** Slow checks went with the failures,
   but the passing V15 run above also took 26.8 s, so slowness alone isn't
-  the fault. Not explained.
+  the fault. Explained and cut to about 4 s in 6.10.
 - **White screen:** once after replugging the FM-1 during a failed install.
   The code was still running (Ctrl-C found it polling touch). Not explained.
 - **Serial input stops if Ctrl-C arrives during a soft reboot.** Sending
@@ -749,6 +749,39 @@ Also seen:
 - **Unreadable disk prompt:** after a hard reset the Mac called the SD card's
   drive unreadable (Eject is safe). Probably shown over USB before `code.py`
   mounts the card.
+
+### 6.10 Why the package check was slow (Oct 28)
+
+Timed on the Feather from the REPL, on a fresh heap, for V15 (700 KB):
+
+| Step | Time |
+|---|---|
+| Whole-file SHA-256 | 1.75 s (4.2 s on the first pass after mounting) |
+| Entry CRCs (622 KB) | 8.4 s |
+| Factory voice bank (decode + CRC + SHA-256) | 3.9 s |
+
+- **Reading the file is not the cost.** A pass over the whole file takes
+  about 1 s, at any read size from 2 to 16 KB. `hashlib` hashes 640 KB of
+  RAM in 0.7 s.
+- **The CRCs are pure Python.** CircuitPython's `binascii` has no `crc_hqx`,
+  so CRC-16 runs at about 93 KB/s. Viper isn't enabled in this build.
+- **The factory bank read 32 bytes at a time.** That was 2,289 separate
+  reads, each with a seek and new buffers. It also ran twice per V15
+  install: once in the check, and again for the voice restore.
+
+The fixes:
+- **`prepare(..., checked=True)` (the touch UI).** It keeps the whole-file
+  SHA-256. Once that matches, it skips the entry CRCs and the factory-bank
+  checks. `make_sd.py` ran those checks on the same bytes before writing
+  `meta.json`, and a wrong digest can't match by chance (6.9). Without
+  `hashlib` it still runs everything. `make_sd.py`, the desktop and
+  `flash_cli.py` run the full checks as before.
+- **`factory_bank()`.** It reads 1 KB at a time and decodes the 32-byte
+  blocks in place.
+
+Results: the V15 check takes 4.1 s and SLOOP's 1.6 s, and the voice-restore
+extraction drops from 3.9 s to 2.5 s. Most of what's left is the per-byte
+decode and CRC of the 73 KB voice entry.
 
 ---
 

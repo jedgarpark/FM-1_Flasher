@@ -372,7 +372,7 @@ def run(app, entry):
         with open(folder + "/meta.json") as f:
             meta = json.load(f)
         pkg_file = open(folder + "/" + meta["file"], "rb")
-        pkg, meta = P.prepare(meta, pkg_file, verify=True)
+        pkg, meta = P.prepare(meta, pkg_file, checked=True)
 
         def trace(event, *values):
             if event == "wait":
