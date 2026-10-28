@@ -1,0 +1,31 @@
+diff --git a/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/board.c b/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/board.c
+index 68ed648f46..a63b14d435 100644
+--- a/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/board.c
++++ b/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/board.c
+@@ -29,5 +29,8 @@ bool board_reset_pin_number(uint8_t pin_number) {
+     return false;
+ }
+ void board_init(void) {
++    // FM-1 test: leave the host port to usb_host.Port() so it can run on other pins.
++    #ifndef FM1_NO_DEFAULT_HOST
+     common_hal_usb_host_port_construct(&pin_GPIO16, &pin_GPIO17);
++    #endif
+ }
+diff --git a/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/mpconfigboard.mk b/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/mpconfigboard.mk
+index d249861efb..aa7c4f9316 100644
+--- a/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/mpconfigboard.mk
++++ b/ports/raspberrypi/boards/adafruit_feather_rp2040_usb_host/mpconfigboard.mk
+@@ -7,3 +7,13 @@ CHIP_VARIANT = RP2040
+ CHIP_FAMILY = rp2
+ 
+ EXTERNAL_FLASH_DEVICES = "GD25Q64C,W25Q64JVxQ"
++
++# Composite USB audio+MIDI devices (e.g. M-VAVE FM-1, 293 bytes) exceed the default.
++CFLAGS += -DCFG_TUH_ENUMERATION_BUFSIZE=512
++
++# 120 MHz so Pico-PIO-USB clock dividers are integers (125 MHz default makes them fractional).
++CFLAGS += -DSYS_CLK_HZ=120000000 -DPLL_SYS_VCO_FREQ_HZ=1440000000 -DPLL_SYS_POSTDIV1=6 -DPLL_SYS_POSTDIV2=2
++
++# Don't claim GPIO16/17 at boot, so code.py can start the host on other pins
++# (e.g. usb_host.Port(board.D11, board.D12) for a USB-A pigtail).
++CFLAGS += -DFM1_NO_DEFAULT_HOST

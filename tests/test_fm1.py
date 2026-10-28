@@ -313,6 +313,18 @@ class Install(unittest.TestCase):
         written = b"".join(d[8:] for c, d in dev.bank_writes if c == P.CMD_BANK_WRITE)
         self.assertEqual(written, pkg.factory_bank())
 
+    def test_restore_survives_reenumeration_after_boot(self):
+        # V15 dropped off the bus ~4 s after its first boot, on the restore's
+        # first query (seen on both the PIO port and the pigtail, Oct 27).
+        pkg, meta = P.prepare(stock_meta(), io.BytesIO(stock_bytes()))
+        clock = FakeClock()
+        dev = FakeFM1(pkg, clock, identity="FM1_OFFICIAL_OPEN", capability=False, reenum_after_boot=3)
+        self.run_install(pkg, meta, dev, clock, force=True)
+        self.assertIn(("reenumerate",), dev.log)
+        self.assertEqual(dev.identity, "FM-1_015")
+        written = b"".join(d[8:] for c, d in dev.bank_writes if c == P.CMD_BANK_WRITE)
+        self.assertEqual(written, pkg.factory_bank())
+
     def test_community_back_to_stock(self):
         pkg, meta = P.prepare(stock_meta(), io.BytesIO(stock_bytes()))
         clock = FakeClock()

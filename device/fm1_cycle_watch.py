@@ -4,7 +4,7 @@
 Logs every attach/detach with the instrumented build's counters (set
 FM1_STATS_ADDR to the address of `fm1_stats` from arm-none-eabi-nm), and marks
 an FM-1 that hasn't come back 12 s after a detach as SILENT, with the line
-state. On a debug build this output also lands in the TinyUSB UART log.
+state. Set FM1_DP if the host port isn't on GPIO16/17. On a debug build this output also lands in the TinyUSB UART log.
 Run with `exec(open('fm1_cycle_watch.py').read())`. Writes nothing to the FM-1.
 """
 import time
@@ -15,6 +15,7 @@ import usb.core
 DURATION = 600
 FM1_VIDS = (0x4C4A, 0x1209)
 gpio_in = memorymap.AddressRange(start=0xD0000004, length=4)
+DP = globals().get("FM1_DP", 16)  # GPIO number of D+; D- is DP + 1
 
 
 def word(addr):
@@ -33,7 +34,7 @@ def lines(sec=0.5):
     seen = {}
     t = time.monotonic()
     while time.monotonic() - t < sec:
-        v = (int.from_bytes(bytes(gpio_in[0:4]), "little") >> 16) & 3
+        v = (int.from_bytes(bytes(gpio_in[0:4]), "little") >> DP) & 3
         seen[v] = seen.get(v, 0) + 1
     return seen  # Pico-PIO-USB inverts inputs: 3 = SE0, 2 = J, 1 = K
 

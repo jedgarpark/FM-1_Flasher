@@ -1,0 +1,52 @@
+diff --git a/src/pio_usb_host.c b/src/pio_usb_host.c
+index c2c07d4..5739432 100644
+--- a/src/pio_usb_host.c
++++ b/src/pio_usb_host.c
+@@ -224,6 +224,14 @@ static void end_transaction(pio_port_t *pp);
+ static void bulk_stream_detach(endpoint_t *ep, bool disconnected);
+ #endif
+ 
++// Notice a device that vanishes while the port waits for its bus reset
++// (connection_check only runs while the bus is active). Without this a
++// dual-role device such as the M-VAVE FM-1 can leave the port marked
++// connected forever, and no further attach is reported.
++#define IDLE_DISCONNECT_FRAMES 20
++static uint8_t idle_se0_frames[PIO_USB_ROOT_PORT_CNT];
++static volatile bool port_in_reset[PIO_USB_ROOT_PORT_CNT];
++
+ static bool __no_inline_not_in_flash_func(connection_check)(root_port_t *port) {
+   if (pio_usb_bus_get_line_state(port) == PORT_PIN_SE0) {
+     busy_wait_1_us();
+@@ -800,6 +808,16 @@ void __not_in_flash_func(pio_usb_host_frame)(void) {
+         root->connected = true;
+         root->suspended = true; // need a bus reset before operating
+         root->ints |= PIO_USB_INTS_CONNECT_BITS;
++        idle_se0_frames[root_idx] = 0;
++      }
++    } else if (root->initialized && root->connected && root->suspended &&
++               !port_in_reset[root_idx]) {
++      if (pio_usb_bus_get_line_state(root) != PORT_PIN_SE0) {
++        idle_se0_frames[root_idx] = 0;
++      } else if (++idle_se0_frames[root_idx] >= IDLE_DISCONNECT_FRAMES) {
++        idle_se0_frames[root_idx] = 0;
++        root->connected = false;
++        root->ints |= PIO_USB_INTS_DISCONNECT_BITS;
+       }
+     }
+   }
+@@ -845,6 +863,7 @@ void pio_usb_host_port_reset_start(uint8_t root_idx) {
+ 
+   // bus is not operating while in reset
+   root->suspended = true;
++  port_in_reset[root_idx] = true;
+ 
+   // Force line state to SE0
+   gpio_set_outover(root->pin_dp,  GPIO_OVERRIDE_LOW);
+@@ -862,6 +881,7 @@ void pio_usb_host_port_reset_end(uint8_t root_idx) {
+   gpio_set_outover(root->pin_dp,  GPIO_OVERRIDE_NORMAL);
+   gpio_set_outover(root->pin_dm,  GPIO_OVERRIDE_NORMAL);
+   busy_wait_us(100); // TODO check if this is neccessary
++  port_in_reset[root_idx] = false;
+ 
+   // bus back to operating
+   root->suspended = false;
