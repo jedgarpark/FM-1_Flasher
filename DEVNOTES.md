@@ -630,7 +630,7 @@ fit yet:
 |---|---|---|---|---|---|
 | Short, ferrite bead | 56k up | open | ~0.2 Ω | short | Silent, stays silent |
 | Short, yellow (charge-only) | 56k up | open | ~0.2 Ω | short | (no data) |
-| Blue 1 m (Adafruit, 1 m version of 6279) | 56k up | 56k up | 0.36 Ω | open | Silent after 1 of 3 cycles, then recovered on a later power cycle |
+| Blue 1 m (Adafruit, 1 m version of 6279) | 56k up | 56k up | 0.36 Ω | open | Went silent once, then recovered on a later power cycle (two detaches logged) |
 | Blue 2 m (Adafruit 6279) | 56k up | 56k up | 1.3 Ω | open | 10 of 10 |
 
 The blue cables put the 56k Rp on both CC lines, so the FM-1 sees it in
