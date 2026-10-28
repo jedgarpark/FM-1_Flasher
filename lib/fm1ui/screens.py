@@ -60,6 +60,13 @@ class Screen:
         """The attached FM-1 (app.identity) changed."""
 
 
+def fm1_status(app):
+    """"FM-1: <what it runs>" for the connected FM-1."""
+    slug = app.installed_slug()
+    e = app.entry(slug) if slug else None
+    return "FM-1: " + (C.display_name(e) if e else app.identity)
+
+
 class ListScreen(Screen):
     """Eight cards a page, a favourites filter, and the FM-1 in the header."""
 
@@ -99,10 +106,8 @@ class ListScreen(Screen):
         g.append(ui.outlined(198, 5, 64, 26, ui.PANEL if on else ui.BG, ui.CYAN if on else ui.LINE))
         g.append(ui.heart_tile(True, 208, 12))
         g.append(ui.text(ui.SMALL, "%d" % len(app.state.favorites), ui.FG if on else ui.DIM, 228, 18, (0, 0.5)))
-        self.status = ui.text(ui.SMALL, self.status_text(), ui.FG if app.identity else ui.DIM, 468, 18, (1, 0.5))
-        g.append(self.status)
-        self.dot = ui.rect(468 - ui.width(ui.SMALL, self.status.text) - 14, 14, 8, 8, ui.OK if app.identity else ui.LINE)
-        g.append(self.dot)
+        self.fm1_at = len(g)
+        g.append(self.fm1_header())
 
         # cards
         self.cards = []
@@ -129,13 +134,20 @@ class ListScreen(Screen):
         self.group = g
         return g
 
-    def status_text(self):
+    def fm1_header(self):
+        """The header's right end: the connected FM-1, "Connecting...", or
+        the Connect FM-1 button (outlined in amber after a failed try)."""
         app = self.app
-        if not app.identity:
-            return "No FM-1"
-        slug = app.installed_slug()
-        e = app.entry(slug) if slug else None
-        return ("FM-1: " + C.display_name(e)) if e else ("FM-1: " + app.identity)
+        g = displayio.Group()
+        if app.identity:
+            status = fm1_status(app)
+            g.append(ui.text(ui.SMALL, status, ui.FG, 468, 18, (1, 0.5)))
+            g.append(ui.rect(468 - ui.width(ui.SMALL, status) - 14, 14, 8, 8, ui.OK))
+        elif app.connecting:
+            g.append(ui.text(ui.SMALL, "Connecting...", ui.DIM, 468, 18, (1, 0.5)))
+        else:
+            g.append(ui.Button("Connect FM-1", 322, 5, 150, 26, edge=ui.WARN if app.connect_failed else ui.CYAN).group)
+        return g
 
     def card(self, e, x, y, installed, slot):
         g = ui.outlined(x, y, CARD_W, CARD_H, ui.PANEL, ui.CYAN if installed else ui.LINE)
@@ -170,7 +182,9 @@ class ListScreen(Screen):
             self.app.show()
 
     def tap(self, x, y):
-        if y < GRID_Y - 2 and 110 <= x < 290:
+        if y < GRID_Y - 2 and x >= 300:
+            self.app.connect()  # connected: ask again, e.g. after a manual install
+        elif y < GRID_Y - 2 and 110 <= x < 290:
             # The tabs take the header's full height (taps there land high)
             # and split at the gap between them.
             fav = x >= (self.tab_all.rect[0] + self.tab_all.rect[2] + self.tab_fav[0]) // 2
@@ -199,12 +213,16 @@ class ListScreen(Screen):
         self.turn(1 if dx < 0 else -1)
 
     def fm1_changed(self):
-        self.app.show()
+        if self.app.connecting:  # just the header, quickly, before the wait
+            self.group[self.fm1_at] = self.fm1_header()
+            self.app.refresh()
+        else:  # the INSTALLED card may change too
+            self.app.show()
 
 
 class DetailScreen(Screen):
     """The picture, name, author, version, tags and description, with Back,
-    a favourite toggle and Install."""
+    a favourite toggle and Install (Connect FM-1 until one is connected)."""
 
     KEEP = Screen.KEEP + ("entry", "meta")
 
@@ -232,8 +250,6 @@ class DetailScreen(Screen):
             tags.append(("beta", ui.WARN))
         if m.get("license"):
             tags.append((m["license"], ui.DIM))
-        installed = app.installed_slug() == e.slug
-
 
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
@@ -285,12 +301,30 @@ class DetailScreen(Screen):
         for left, ly, line in lines:
             g.append(ui.text(ui.BODY, line, ui.TEXT, left, ly, (0, 0)))
 
-        self.install = ui.Button("Install again" if installed else "Install", 330, 282, 142, 34,
-                                 fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
-        g.append(self.install.group)
-        if installed:
-            g.append(ui.text(ui.SMALL, "Installed on this FM-1", ui.CYAN, 12, 299, (0, 0.5)))
+        self.bar_at = len(g)
+        g.append(self.bar())
         self.group = g
+        return g
+
+    def bar(self):
+        """The bottom line: what's connected, and Install or Connect FM-1."""
+        app = self.app
+        g = displayio.Group()
+        if app.identity:
+            installed = app.installed_slug() == self.entry.slug
+            label, ready = ("Install again" if installed else "Install"), True
+            note, color = ("Installed on this FM-1", ui.CYAN) if installed else (fm1_status(app), ui.DIM)
+        elif app.connecting:
+            label, ready = "Connect FM-1", False
+            note, color = "Connecting...", ui.DIM
+        else:
+            label, ready = "Connect FM-1", True
+            note, color = (("No FM-1 answered. Is it on and plugged in?", ui.WARN) if app.connect_failed
+                           else ("Connect the FM-1 to install.", ui.DIM))
+        self.install = ui.Button(label, 316, 282, 156, 34, fill=ui.CYAN if ready else ui.BG,
+                                 edge=ui.CYAN if ready else ui.LINE, color=ui.BG if ready else ui.LINE)
+        g.append(self.install.group)
+        g.append(ui.text(ui.SMALL, note, color, 12, 299, (0, 0.5)))
         return g
 
     def tap(self, x, y):
@@ -300,7 +334,14 @@ class DetailScreen(Screen):
             ui.set_heart(self.heart, self.app.state.toggle_favorite(self.entry.slug))
             self.app.refresh()
         elif self.install.hit(x, y):
-            self.app.push(ConfirmScreen(self.app, self.entry))
+            if self.app.identity:
+                self.app.push(ConfirmScreen(self.app, self.entry))
+            else:
+                self.app.connect()
+
+    def fm1_changed(self):
+        self.group[self.bar_at] = self.bar()
+        self.app.refresh()
 
     def swipe(self, dx):
         if dx > 0:
@@ -308,7 +349,8 @@ class DetailScreen(Screen):
 
 
 class ConfirmScreen(Screen):
-    """Install X over what the FM-1 is running? Waits for an FM-1 if none is attached."""
+    """Install X over what the FM-1 is running? Reached with an FM-1 connected;
+    goes back to the details if it's unplugged."""
 
     KEEP = Screen.KEEP + ("entry",)
 
@@ -320,8 +362,7 @@ class ConfirmScreen(Screen):
         app, e = self.app, self.entry
         ident = app.identity
         if not ident:
-            return False, ("Connect the FM-1 to the USB port and turn it on. "
-                           "This screen continues when it appears.")
+            return False, "The FM-1 is no longer connected. Go back and tap Connect FM-1."
         current = app.installed_slug()
         cur = app.entry(current) if current else None
         running = C.display_name(cur) if cur else ident
@@ -368,7 +409,10 @@ class ConfirmScreen(Screen):
             self.app.start_install(self.entry)
 
     def fm1_changed(self):
-        self.app.show()
+        if self.app.identity:
+            self.app.show()
+        else:  # unplugged: back to the details, which offer Connect FM-1
+            self.app.pop()
 
 
 class ProgressScreen(Screen):

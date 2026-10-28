@@ -5,7 +5,9 @@ Feather (fm1ui.device) and in the desktop simulator (tools/ui_sim.py).
 
 display   a displayio display with auto_refresh off
 touch     .event() -> ("tap", x, y), ("swipe", dx), or None
-probe     .identity(force=False) -> the attached FM-1's identity or None
+probe     .connect() -> the FM-1's identity, or None if none answered
+          (Connect FM-1: nothing is sent to the FM-1 before it);
+          .present() -> is the connected FM-1 still attached
 installer .start(app, entry): run, or arrange to run, the install;
           optional .finish(app) after the user dismisses the result
 """
@@ -38,8 +40,10 @@ class App:
         self.installer = installer
         self.index = C.Index(root + "/index.txt")
         self.updated = self.index.updated
-        self.identity = probe.identity() if probe else None
-        self.next_probe = time.monotonic() + self.PROBE_EVERY_S
+        self.identity = None  # set by connect()
+        self.connecting = False
+        self.connect_failed = False
+        self.next_probe = 0
         self.stack = []
         self.blank = displayio.Group()
 
@@ -94,13 +98,27 @@ class App:
 
     # -- loop -----------------------------------------------------------------
 
+    def connect(self):
+        """Connect FM-1: ask the attached FM-1 who it is. Blocks for up to
+        a few seconds, with the screens showing "Connecting"."""
+        if self.probe is None or self.connecting:
+            return
+        self.connecting = True
+        self.connect_failed = False
+        self.stack[-1].fm1_changed()
+        self.identity = self.probe.connect()
+        self.connecting = False
+        self.connect_failed = self.identity is None
+        self.next_probe = time.monotonic() + self.PROBE_EVERY_S
+        self.stack[-1].fm1_changed()
+
     def poll_fm1(self, now):
-        if self.probe is None or now < self.next_probe:
+        """Notice the connected FM-1 going away. Sends nothing to it."""
+        if self.probe is None or self.identity is None or now < self.next_probe:
             return
         self.next_probe = now + self.PROBE_EVERY_S
-        ident = self.probe.identity()
-        if ident != self.identity:
-            self.identity = ident
+        if not self.probe.present():
+            self.identity = None
             self.stack[-1].fm1_changed()
 
     def step(self):

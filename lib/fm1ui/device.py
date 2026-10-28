@@ -161,50 +161,93 @@ def query_identity(transport, ms=750):
     return None
 
 
+def find_fm1(seconds, idle=None):
+    """(transport, identity, queries) for an FM-1 that answers an identity
+    query within `seconds`; transport and identity are None if none does.
+    idle() runs between tries.
+
+    After a reload the first query or two on the FM-1 get no reply, then it
+    answers at once, but only on the same transport: reopening each try
+    (endpoints closed and opened again) never got an answer in 15 s
+    (logs/ui-install1.log). So one transport is kept for the whole wait, and
+    the caller keeps using it."""
+    t0 = time.monotonic()
+    t = None
+    tries = 0
+    while time.monotonic() - t0 < seconds:
+        try:
+            if t is None or t.lost:
+                if t is not None:
+                    t.close()
+                found = fm1usb.finder(None, 64, 0)()
+                for other in found[1:]:
+                    other.close()
+                t = found[0] if found else None
+            if t is not None:
+                tries += 1
+                ident = query_identity(t)
+                if ident:
+                    return t, ident, tries
+        except (usb.core.USBError, OSError, ValueError) as e:
+            print("find_fm1:", repr(e))
+            if t is not None:
+                t.close()
+            t = None
+        if idle:
+            idle()
+        time.sleep(0.25)
+    if t is not None:
+        t.close()
+    return None, None, tries
+
+
+def _usb_devices():
+    return tuple((d.idVendor, d.idProduct) for d in usb.core.find(find_all=True))
+
+
 class Probe:
-    """The attached FM-1's identity. It is asked only when the set of USB
-    devices changes, or after a failed attempt, so an idle FM-1 sees no traffic.
-    The transports stay open until the devices change: after a reload the
-    FM-1 answers only once a transport has had a query or two (see
-    wait_for_fm1)."""
+    """The FM-1 the user connected with Connect FM-1. Nothing is sent to the
+    FM-1 until connect(); present() only lists the USB devices, to notice
+    an unplug. The answering transport is kept until then, so the FM-1
+    stays ready to answer (see find_fm1)."""
+
+    CONNECT_S = 6  # after a reload V15 answered on the 3rd query, 2.2 s in
 
     def __init__(self):
-        self.key = None
+        self.t = None
         self.devices = None
-        self.ident = None
-        self.found = []
 
     def close(self):
-        for t in self.found:
-            t.close()
-        self.found = []
+        if self.t is not None:
+            self.t.close()
+            self.t = None
 
-    def identity(self):
+    def connect(self):
+        """The FM-1's identity, or None if none answered."""
+        self.close()
+        t0 = time.monotonic()
+        t, ident, tries = find_fm1(self.CONNECT_S)
+        print("connect: %s after %.1f s, %d queries" % (ident, time.monotonic() - t0, tries))
+        if ident:
+            self.t = t
+            try:
+                self.devices = _usb_devices()
+            except (usb.core.USBError, OSError):
+                self.devices = None
+        return ident
+
+    def present(self):
+        """Is the connected FM-1 still attached? Sends nothing to it."""
+        if self.t is None:
+            return False
         try:
-            key = tuple((d.idVendor, d.idProduct) for d in usb.core.find(find_all=True))
+            devices = _usb_devices()
         except (usb.core.USBError, OSError):
-            return self.ident
-        if key == self.key:
-            return self.ident
-        if key != self.devices or any(t.lost for t in self.found):
+            return True  # can't tell; keep it
+        if self.t.lost or (self.devices is not None and devices != self.devices):
             self.close()
-            self.devices = key
-        self.ident = None
-        self.key = key
-        if not key:
-            return None
-        try:
-            if not self.found:
-                self.found = fm1usb.finder(None, 64, 0)()
-            for t in self.found:
-                ident = query_identity(t) or query_identity(t)  # one retry, as the installer does
-                if ident:
-                    self.ident = ident
-        except (usb.core.USBError, OSError, ValueError):
-            self.close()
-        if self.ident is None:
-            self.key = None  # ask again next time
-        return self.ident
+            return False
+        return True
 
 
 class DeviceState(C.State):
@@ -262,7 +305,7 @@ class Installer:
             supervisor.reload()
         else:  # no NVM: install in place
             if app.probe is not None:
-                app.probe.close()  # its transports would share the installer's endpoints
+                app.probe.close()  # its transport would share the installer's endpoints
             run(app, entry)
 
     def finish(self, app):
@@ -271,47 +314,24 @@ class Installer:
 
 def wait_for_fm1(screen, seconds=ANSWER_WAIT_S):
     """The transport of an FM-1 that answers an identity query, or None.
-
-    After a reload the first query or two on the FM-1 get no reply, then it
-    answers at once, but only on the same transport: reopening each try
-    (endpoints closed and opened again) never got an answer in 15 s
-    (logs/ui-install1.log). So one transport is kept for the whole wait,
-    and the installer is handed that same one."""
+    The installer is handed that same transport (see find_fm1)."""
     t0 = time.monotonic()
-    waiting = False
-    t = None
-    tries = 0
-    while time.monotonic() - t0 < seconds:
-        try:
-            if t is None or t.lost:
-                if t is not None:
-                    t.close()
-                found = fm1usb.finder(None, 64, 0)()
-                for other in found[1:]:
-                    other.close()
-                t = found[0] if found else None
-            if t is not None:
-                tries += 1
-                ident = query_identity(t)
-                if ident:
-                    print("install: %s answered after %.1f s, query %d" % (ident, time.monotonic() - t0, tries))
-                    if waiting:
-                        screen.found()
-                    return t
-        except (usb.core.USBError, OSError, ValueError) as e:
-            print("install: waiting:", repr(e))
-            if t is not None:
-                t.close()
-            t = None
+    waiting = []
+
+    def idle():
         if not waiting:
             screen.wait("connect", "Waiting for the FM-1 to connect...")
-            waiting = True
+            waiting.append(True)
         screen.tick(time.monotonic())
-        time.sleep(0.25)
-    if t is not None:
-        t.close()
-    print("install: no FM-1 answered in %d s (%d queries)" % (seconds, tries))
-    return None
+
+    t, ident, tries = find_fm1(seconds, idle)
+    if ident:
+        print("install: %s answered after %.1f s, query %d" % (ident, time.monotonic() - t0, tries))
+        if waiting:
+            screen.found()
+    else:
+        print("install: no FM-1 answered in %d s (%d queries)" % (seconds, tries))
+    return t
 
 
 def run(app, entry):

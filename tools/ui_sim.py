@@ -10,7 +10,7 @@ adafruit-circuitpython-bitmap-font, Pillow and (for the window) pygame.
 The FM-1 is faked (--identity) and installs only animate the progress screen.
 
 Script steps (--do, in order): "tap X,Y", "swipe DX", "shot FILE.png",
-"identity ID" (or "identity none"), "phase NAME PCT", "wait", "found",
+"identity ID" (or "identity none": unplugged), "connect", "phase NAME PCT", "wait", "found",
 "finish ok [MSG]", "finish fail MSG".
 """
 import argparse
@@ -82,11 +82,19 @@ def _rgb565_to_rgb(raw):
 
 
 class FakeProbe:
+    """An FM-1 that answers as `ident` (None: nothing attached)."""
+
     def __init__(self, ident):
         self.ident = ident
 
-    def identity(self):
+    def connect(self):
         return self.ident
+
+    def present(self):
+        return self.ident is not None
+
+    def close(self):
+        pass
 
 
 class ScriptTouch:
@@ -154,6 +162,8 @@ def run_script(app, touch, steps):
             app.probe.ident = None if arg == "none" else arg
             app.next_probe = 0
             app.step()
+        elif cmd == "connect":
+            app.connect()
         elif cmd == "phase":
             name, _, pct = arg.rpartition(" ")
             screen.phase(name, int(pct))
@@ -196,7 +206,7 @@ def run_window(app, scale):
                 down = False
                 gestures.sample(None)
             elif ev.type == pygame.KEYDOWN and ev.unicode == "f":
-                # toggle an attached FM-1 running stock V15
+                # plug or unplug an FM-1 running stock V15 (then Connect FM-1)
                 app.probe.ident = None if app.probe.ident else "FM-1_015"
         if down:
             mx, my = pygame.mouse.get_pos()
@@ -209,7 +219,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", default=os.path.join(ROOT, "sd_out", "full", "firmware"))
     ap.add_argument("--state", help="state JSON (default: flasher-sim.json next to --root)")
-    ap.add_argument("--identity", default="FM-1_015", help="the fake FM-1's identity, or 'none'")
+    ap.add_argument("--identity", default="FM-1_015", help="what the fake FM-1 answers to Connect, or 'none'")
     ap.add_argument("--do", action="append", default=[], help="script step (headless)")
     ap.add_argument("--scale", type=int, default=2, help="window zoom")
     args = ap.parse_args()
