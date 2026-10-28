@@ -37,9 +37,12 @@ this file has the story and the evidence. Dates are 2026.
   ([§6.6](#66-what-the-silent-state-is-oct-27),
   [§6.7](#67-cable-length-decides-it-oct-27)). A 30 cm USB-A pigtail on D11/D12
   works the same way, which leaves D9/D10 free.
-- Not started: the touchscreen UI (Phase 4). With the MAX3421E wing, its
-  D9/D10 must be moved, because the TFT FeatherWing uses the same pins; the
-  PIO port avoids that.
+- **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
+  V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
+  V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
+  in 84–98 s ([§6.9](#69-first-install-from-the-touch-ui-oct-28)). With the
+  MAX3421E wing instead, its D9/D10 must be moved, because the TFT
+  FeatherWing uses the same pins.
 
 ---
 
