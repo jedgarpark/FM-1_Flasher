@@ -39,7 +39,8 @@ this file has the story and the evidence. Dates are 2026.
   works the same way, which leaves D9/D10 free. It's probably the cable's
   resistance rather than its length, and it's V15 that goes silent: SLOOP
   connected on every short cable tried
-  ([§6.12](#612-cables-again-not-length-alone-and-v15-is-the-picky-one-oct-29)).
+  ([§6.12](#612-cables-again-not-length-alone-and-v15-is-the-picky-one-oct-29)). A powered USB hub in between doesn't help
+  ([§6.13](#613-a-powered-usb-hub-doesnt-help-v15-oct-29)).
 - **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
   V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
   V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
@@ -938,6 +939,50 @@ in order of cost:
 - **One more failed connect, at 22:46:55,** after the last note. It's unlabelled
   and left out of the tables.
 
+### 6.13 A powered USB hub doesn't help V15 (Oct 29)
+
+**Idea.** Put a hub between the PIO port and the FM-1, so the FM-1 sees a
+proper USB 2 hub port instead of the Feather's: real 15 kΩ pull-downs and
+VBUS from a stiff supply. If V15's role check is reacting to the Feather's
+port, a short cable behind the hub should work.
+
+**Setup.** Feather 2 with the TFT FeatherWing, CircuitPython 11.0.0-alpha.2 as
+in §6.9, the built-in PIO port. The hub is the Raspberry Pi USB 3 hub
+(Adafruit 6012: Infineon CYUSB3304, 8 cm captive upstream cable, four USB-A
+ports), powered from its USB-C input. CircuitPython builds with
+`CFG_TUH_HUB 2`. The PIO port runs at full speed, so the hub runs as a
+full-speed USB 2 hub. The FM-1 ran V15 throughout.
+
+**The hub only appears if the Feather powers up with it attached.** Plugged
+into a running Feather, nothing enumerated, not even the hub, and neither
+re-creating `usb_host.Port` nor `microcontroller.reset()` changed that. After a
+full power cycle of the Feather with the hub in place, it worked.
+`usb.core.find` never lists the hub itself, only the devices behind it.
+
+| Hub to FM-1 | How the FM-1 got there | Result |
+|---|---|---|
+| 2 m (6279) | Feather power cycle | Connected (`4c4a:c755`), steady for 10 s; "Connect to FM-1" worked |
+| Short yellow cable | Swapped in with everything running | Nothing in 10 s |
+| Short yellow cable | Feather power cycle | Connected, steady for 10 s; "Connect to FM-1" worked |
+| Short yellow cable | FM-1 power cycles, Feather running (about 10) | **Silent from the first, never came back** |
+
+The watcher polled `usb.core.find` every 0.25 s and flagged an FM-1 that
+hadn't returned 12 s after a detach. It logged one detach, at the first
+power-off, then nothing. After the run the port still saw no device.
+
+**What this shows:**
+- **The hub doesn't fix V15 on a short cable.** Its only short-cable
+  successes came when the Feather powered up. With the FM-1 power-cycling on
+  its own, as it does during every install, V15 went silent as it does
+  directly on the PIO port (§6.12).
+- **It weakens the Feather-port suspects.** The hub's port has the 15 kΩ
+  pull-downs the PIO port lacks (§6.6) and is fed from the hub's own supply,
+  not the Feather's boost and fuse, yet V15 still picked host. So the
+  termination and the Feather's power path aren't the whole story; the
+  cable's own resistance still fits (§6.12). One cable and one run, though.
+- **Not tested:** the 2 m cable behind the hub through FM-1 power cycles, and
+  an install through the hub.
+
 ---
 
 ## 7. Tools and techniques worth reusing
@@ -1004,7 +1049,8 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 
 - **Why does a short cable make V15's role check pick host** on the PIO port
   (§6.12)? SLOOP has no role check, so it isn't affected. It tracks resistance
-  better than length.
+  better than length. A powered hub's port, with proper pull-downs and its
+  own supply, didn't help (§6.13).
   Is it a VBUS surge or the data lines? Why is the MAX3421E fine with a short
   cable, and why did the same short cable work 7–8 times in 10 on earlier
   days? Next: measure each combination's VBUS–GND loop resistance, then try
