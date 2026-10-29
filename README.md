@@ -27,6 +27,30 @@ FM1_TEST_PKGS=path/to/fwsc/folder python3 -m unittest discover -s tests   # also
 node tests/make_golden.mjs                                    # regenerate golden vectors from WebUpdate.js
 ```
 
+### Trying the UI on the desktop
+
+`tools/ui_sim.py` runs the same `lib/fm1ui` screens in a window, with the mouse as your finger: tap, and drag sideways to swipe. The FM-1 is faked and an install only animates the progress screen, so nothing is flashed. It needs the dev venv with the Blinka displayio packages, pygame and Pillow (see the script's docstring).
+
+```sh
+.venv/bin/python tools/make_sd.py --out sd_out/full --catalog     # once, and to refresh: a local copy of the card
+.venv/bin/python tools/ui_sim.py                                  # reads sd_out/full/firmware
+.venv/bin/python tools/ui_sim.py --root /Volumes/FMFLASH/firmware # or a card in a reader
+.venv/bin/python tools/ui_sim.py --identity none                  # start with no FM-1 plugged in
+```
+
+Keys in the window (the title bar shows the FM-1's state):
+
+| Key | What it does |
+|---|---|
+| `f` | Plug or unplug the FM-1. Then tap Connect FM-1. After an install it answers as the new firmware. |
+| `x` | Fail the install that's running, to see the error screen. |
+| `s` | Stall: the FM-1 doesn't come back after its restart, so the install waits there and shows the power-cycle hint after 20 s. Press `s` again to let it finish. |
+| `h` | List the keys in the terminal. |
+
+Favourites and the list view are saved in `flasher-sim.json` next to the firmware folder, apart from the card's `flasher.json`. The simulator doesn't model the Feather's RAM or speed: a screen that runs out of memory on the device works fine here.
+
+With `--do` steps it runs without a window and saves screenshots, for checking a layout change: `--do "tap 100,100" --do "shot detail.png"`.
+
 ### Preparing an SD card
 
 ```sh
