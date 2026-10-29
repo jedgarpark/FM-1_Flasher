@@ -63,6 +63,13 @@ class Catalog(unittest.TestCase):
         self.assertFalse(s.toggle_favorite("zp12"))
         self.assertEqual(C.State(self.state_path).favorites, {"sloop"})
 
+    def test_view_persists(self):
+        s = C.State(self.state_path)
+        self.assertEqual(s.view, "grid")
+        s.view = "list"
+        s.save()
+        self.assertEqual(C.State(self.state_path).view, "list")
+
     def test_unwritable_state_is_not_fatal(self):
         s = C.State(os.path.join(self.dir.name, "missing", "state.json"))
         self.assertTrue(s.toggle_favorite("zp12"))

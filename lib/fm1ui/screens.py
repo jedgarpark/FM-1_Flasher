@@ -18,6 +18,10 @@ COLS, ROWS = 3, 2  # six cards: the picture pool is ui.SLOTS = 6
 PER_PAGE = COLS * ROWS
 CARD_W, CARD_H, GAP = 151, 118, 6
 GRID_X, GRID_Y = 7, 40
+ROW_W, ROW_H, ROW_PITCH = 230, 28, 30  # the text list: no pictures, so more a page
+LIST_ROWS = 8
+PER_LIST = 2 * LIST_ROWS  # two columns
+VIEW = (80, 286, 72, 32)  # the footer's grid/list toggle
 THUMB = 80
 STOCK_PRODUCT = "FM-1_015"
 
@@ -78,8 +82,8 @@ def fm1_status(app):
 
 
 class ListScreen(Screen):
-    """Six cards a page, a tag filter, a favourites filter, and the FM-1 in
-    the header."""
+    """Six cards or 16 names a page, a tag filter, a favourites filter, and
+    the FM-1 in the header."""
 
     KEEP = Screen.KEEP + ("page", "favorites_only", "tag")
 
@@ -94,6 +98,9 @@ class ListScreen(Screen):
         """Index positions of the entries the filters show."""
         return self.app.index.select(self.app.state.favorites if self.favorites_only else None, self.tag)
 
+    def per_page(self):
+        return PER_LIST if self.app.state.view == "list" else PER_PAGE
+
     def next_tag(self):
         """All -> each tag, most used first -> All."""
         tags = self.app.tags
@@ -103,9 +110,10 @@ class ListScreen(Screen):
     def build(self):
         app = self.app
         items = self.items()
-        pages = C.page_count(len(items), PER_PAGE)
+        per = self.per_page()
+        pages = C.page_count(len(items), per)
         self.page = min(self.page, pages - 1)
-        shown = [app.index.entry(i) for i in C.page_slice(items, self.page, PER_PAGE)]
+        shown = [app.index.entry(i) for i in C.page_slice(items, self.page, per)]
         del items
         installed = app.installed_slug()
 
@@ -139,9 +147,13 @@ class ListScreen(Screen):
                 empty = "No firmware found on the card."
             g.append(ui.text(ui.BODY, empty, ui.DIM, W // 2, 160, (0.5, 0.5)))
         for i, e in enumerate(shown):
-            x = GRID_X + (i % COLS) * (CARD_W + GAP)
-            y = GRID_Y + (i // COLS) * (CARD_H + GAP)
-            g.append(self.card(e, x, y, e.slug == installed, i))
+            if per == PER_LIST:
+                x = GRID_X + (i // LIST_ROWS) * (ROW_W + GAP)
+                g.append(self.row(e, x, GRID_Y + (i % LIST_ROWS) * ROW_PITCH, e.slug == installed))
+            else:
+                x = GRID_X + (i % COLS) * (CARD_W + GAP)
+                y = GRID_Y + (i // COLS) * (CARD_H + GAP)
+                g.append(self.card(e, x, y, e.slug == installed, i))
 
         # footer
         self.prev = (7, 286, 64, 32)
@@ -153,6 +165,8 @@ class ListScreen(Screen):
             self.arrows.append(box if active else None)
             g.append(box)
             g.append(ui.triangle(bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left))
+        self.view_g = self.view_toggle(per == PER_LIST)
+        g.append(self.view_g)
         g.append(ui.text(ui.SMALL, "Page %d of %d" % (self.page + 1, pages), ui.FG, W // 2, 296, (0.5, 0.5)))
         if app.updated:
             g.append(ui.text(ui.SMALL, "Catalogue " + C.nice_date(app.updated), ui.DIM, W // 2, 311, (0.5, 0.5)))
@@ -204,11 +218,52 @@ class ListScreen(Screen):
         self.cards.append((e, (x, y, CARD_W, CARD_H), (x + CARD_W - 28, y - GAP, 28 + GAP, 50), tile, g))
         return g
 
+    def row(self, e, x, y, installed):
+        """One firmware as its name and heart, with the tag's colour stripe."""
+        g = ui.outlined(x, y, ROW_W, ROW_H, ui.PANEL, ui.CYAN if installed else ui.LINE)
+        g.append(ui.rect(x + 5, y + 6, 3, ROW_H - 12, ui.kind_color(e.kind)))
+        name = C.ellipsize(e.name, lambda s: ui.width(ui.NAME, s), ROW_W - 50)
+        g.append(ui.text(ui.NAME, name, ui.CYAN if installed else ui.FG, x + 16, y + ROW_H // 2, (0, 0.5)))
+        fav = e.slug in self.app.state.favorites
+        tile = ui.heart_tile(fav, x + ROW_W - 22, y + 9)
+        g.append(tile)
+        self.cards.append((e, (x, y, ROW_W, ROW_H), (x + ROW_W - 40, y - 1, 46, ROW_H + 2), tile, g))
+        return g
+
+    def view_toggle(self, as_list):
+        """Two halves, pictures | text, with the current one lit."""
+        x, y, w, h = VIEW
+        half = w // 2
+        g = ui.outlined(x, y, w, h, ui.BG, ui.LINE)
+        lit = x + half if as_list else x
+        g.append(ui.panel(lit + 1, y + 1, half - 1, h - 2, ui.PANEL, 3))
+        g.append(ui.rect(x + half, y + 1, 1, h - 2, ui.LINE))
+        on, off = ui.CYAN, ui.DIM
+        c = off if as_list else on
+        for i in range(6):  # a 3x2 grid of small squares
+            g.append(ui.rect(x + 7 + (i % 3) * 8, y + 10 + (i // 3) * 7, 6, 5, c))
+        c = on if as_list else off
+        for i in range(3):  # three lines of text
+            g.append(ui.rect(x + half + 8, y + 10 + i * 5, 20, 2, c))
+        return g
+
+    def set_view(self, view):
+        if view != self.app.state.view:
+            first = self.page * self.per_page()
+            self.app.state.view = view
+            self.app.state.save()
+            self.page = first // self.per_page()  # keep the top entry on screen
+            self.app.show()
+
     def turn(self, delta):
         page = self.page + delta
         if 0 <= page < self.pages:
             self.page = page
             self.app.show()
+
+    def _prev_side(self, x):
+        # The page arrow and the view toggle split at the gap between them.
+        return x < (self.prev[0] + self.prev[2] + VIEW[0]) // 2
 
     def _fav_side(self, x):
         # The tabs take the header's full height (taps there land high)
@@ -220,8 +275,8 @@ class ListScreen(Screen):
             return self.connect_btn.group if self.connect_btn else None
         if y < GRID_Y - 2 and 110 <= x < 290:
             return self.tab_fav_g if self._fav_side(x) else self.tab_tag.group
-        if y >= self.prev[1] - 8 and x < 140:
-            return self.arrows[0]
+        if y >= self.prev[1] - 8 and x < 160:
+            return self.arrows[0] if self._prev_side(x) else self.view_g
         if y >= self.next[1] - 8 and x >= W - 140:
             return self.arrows[1]
         for e, card, heart, tile, g in self.cards:
@@ -241,8 +296,11 @@ class ListScreen(Screen):
                 self.tag = self.next_tag()
             self.page = 0
             self.app.show()
-        elif y >= self.prev[1] - 8 and x < 140:
-            self.turn(-1)
+        elif y >= self.prev[1] - 8 and x < 160:
+            if self._prev_side(x):
+                self.turn(-1)
+            else:
+                self.set_view("grid" if x < VIEW[0] + VIEW[2] // 2 else "list")
         elif y >= self.next[1] - 8 and x >= W - 140:
             self.turn(1)
         else:

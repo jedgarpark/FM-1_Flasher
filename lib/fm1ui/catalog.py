@@ -139,7 +139,8 @@ def page_slice(items, page, per_page):
 
 
 class State:
-    """Favourites, the last install and a pending install, kept in a JSON file.
+    """Favourites, the last install, a pending install and the list view
+    ("grid" or "list"), kept in a JSON file.
     Writes are best effort: a read-only card just means nothing is remembered."""
 
     def __init__(self, path):
@@ -147,17 +148,20 @@ class State:
         self.favorites = set()
         self.installed = None  # {"slug": ..., "product": ...}
         self.pending = None    # slug of an install to run after a reload
+        self.view = "grid"
         try:
             with open(path) as f:
                 data = json.load(f)
             self.favorites = set(data.get("favorites", ()))
             self.installed = data.get("installed")
             self.pending = data.get("pending")
+            self.view = data.get("view", "grid")
         except (OSError, ValueError):
             pass
 
     def save(self):
-        data = {"favorites": sorted(self.favorites), "installed": self.installed, "pending": self.pending}
+        data = {"favorites": sorted(self.favorites), "installed": self.installed, "pending": self.pending,
+                "view": self.view}
         try:
             with open(self.path, "w") as f:
                 json.dump(data, f)
