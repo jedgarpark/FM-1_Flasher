@@ -39,7 +39,8 @@ this file has the story and the evidence. Dates are 2026.
   works the same way, which leaves D9/D10 free. It's probably the cable's
   resistance rather than its length, and it's V15 that goes silent: SLOOP
   connected on every short cable tried
-  ([§6.12](#612-cables-again-not-length-alone-and-v15-is-the-picky-one-oct-29)).
+  ([§6.12](#612-cables-again-not-length-alone-and-v15-is-the-picky-one-oct-29)). A powered USB hub in between doesn't help
+  ([§6.13](#613-a-powered-usb-hub-doesnt-help-v15-oct-29)).
 - **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
   V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
   V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
@@ -605,8 +606,9 @@ but with the host port on GPIO16/17). All with the same FM-1 on V15:
 | Bead cable → 4449 jack → jumpers → 3628 plug → socket | 10 of 10, then 5 of 5 with the good cable |
 | **A 2 m cable (Adafruit 6279), direct** | **10 of 10** |
 
-A third, plain cable turned out to be charge-only: the Mac didn't see the FM-1
-through it either. Its runs are left out.
+A third, plain cable (the yellow one) seemed to be charge-only: the Mac didn't
+see the FM-1 through it either. Its runs are left out. **It does carry data**
+(§6.12): the FM-1 was probably already in host role.
 
 Over the 2 m cable on the built-in port: V15 → ChoralRoot 0.27 in 71 s, and
 ChoralRoot → V15 in 69 s.
@@ -635,7 +637,7 @@ fit yet:
 | Cable | CC1 | CC2 | VBUS–GND | Shell–GND | On the PIO port |
 |---|---|---|---|---|---|
 | Short, ferrite bead | 56k up | open | ~0.2 Ω | short | Silent, stays silent |
-| Short, yellow (charge-only) | 56k up | open | ~0.2 Ω | short | (no data) |
+| Short, yellow (carries data, §6.12) | 56k up | open | ~0.2 Ω | short | Not run |
 | Blue 1 m (Adafruit, 1 m version of 6279) | 56k up | 56k up | 0.36 Ω | open | Went silent once, then recovered on a later power cycle (two detaches logged) |
 | Blue 2 m (Adafruit 6279) | 56k up | 56k up | 1.3 Ω | open | 10 of 10 |
 
@@ -854,8 +856,12 @@ SLOOP → V15 with factory voices over the 2 m cable: 93.5 s, no resends.
   and 22 cm plus the 14 cm panel-mount lead doesn't. The chain is thin wire
   and four extra contacts, so it adds far more **resistance** per cm than a
   normal cable. Resistance fits every row: the 1 m (0.36 Ω VBUS–GND, §6.7)
-  is borderline, and the 2 m (1.3 Ω) never fails. **Unmeasured:** the loop
-  resistance of the other combinations.
+  is borderline, and the 2 m (1.3 Ω) never fails. Two more VBUS–GND
+  readings (same TREEDIX tester): the yellow cable alone 0.151 Ω (§6.7 read
+  about 0.2 Ω), and the yellow cable + the chain 0.48 Ω, so the chain adds
+  about 0.33 Ω. Neither has been run with V15 directly on the Feather (only
+  the bare cable behind a hub, §6.13); if resistance decides it, the chain
+  version should mostly connect and the bare cable shouldn't. **Unmeasured:** the loop resistance of the other combinations.
 - **The firmware matters.** Every cable worked with SLOOP, including the
   three short ones that fail with V15. §6.7 cleared the firmware, but only on
   the long pigtail, where both work.
@@ -937,6 +943,50 @@ in order of cost:
 - **One more failed connect, at 22:46:55,** after the last note. It's unlabelled
   and left out of the tables.
 
+### 6.13 A powered USB hub doesn't help V15 (Oct 29)
+
+**Idea.** Put a hub between the PIO port and the FM-1, so the FM-1 sees a
+proper USB 2 hub port instead of the Feather's: real 15 kΩ pull-downs and
+VBUS from a stiff supply. If V15's role check is reacting to the Feather's
+port, a short cable behind the hub should work.
+
+**Setup.** Feather 2 with the TFT FeatherWing, CircuitPython 11.0.0-alpha.2 as
+in §6.9, the built-in PIO port. The hub is the Raspberry Pi USB 3 hub
+(Adafruit 6012: Infineon CYUSB3304, 8 cm captive upstream cable, four USB-A
+ports), powered from its USB-C input. CircuitPython builds with
+`CFG_TUH_HUB 2`. The PIO port runs at full speed, so the hub runs as a
+full-speed USB 2 hub. The FM-1 ran V15 throughout.
+
+**The hub only appears if the Feather powers up with it attached.** Plugged
+into a running Feather, nothing enumerated, not even the hub, and neither
+re-creating `usb_host.Port` nor `microcontroller.reset()` changed that. After a
+full power cycle of the Feather with the hub in place, it worked.
+`usb.core.find` never lists the hub itself, only the devices behind it.
+
+| Hub to FM-1 | How the FM-1 got there | Result |
+|---|---|---|
+| 2 m (6279) | Feather power cycle | Connected (`4c4a:c755`), steady for 10 s; "Connect to FM-1" worked |
+| Short yellow cable | Swapped in with everything running | Nothing in 10 s |
+| Short yellow cable | Feather power cycle | Connected, steady for 10 s; "Connect to FM-1" worked |
+| Short yellow cable | FM-1 power cycles, Feather running (about 10) | **Silent from the first, never came back** |
+
+The watcher polled `usb.core.find` every 0.25 s and flagged an FM-1 that
+hadn't returned 12 s after a detach. It logged one detach, at the first
+power-off, then nothing. After the run the port still saw no device.
+
+**What this shows:**
+- **The hub doesn't fix V15 on a short cable.** Its only short-cable
+  successes came when the Feather powered up. With the FM-1 power-cycling on
+  its own, as it does during every install, V15 went silent as it does
+  directly on the PIO port (§6.12).
+- **It weakens the Feather-port suspects.** The hub's port has the 15 kΩ
+  pull-downs the PIO port lacks (§6.6) and is fed from the hub's own supply,
+  not the Feather's boost and fuse, yet V15 still picked host. So the
+  termination and the Feather's power path aren't the whole story; the
+  cable's own resistance still fits (§6.12). One cable and one run, though.
+- **Not tested:** the 2 m cable behind the hub through FM-1 power cycles, and
+  an install through the hub.
+
 ---
 
 ## 7. Tools and techniques worth reusing
@@ -1003,7 +1053,8 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 
 - **Why does a short cable make V15's role check pick host** on the PIO port
   (§6.12)? SLOOP has no role check, so it isn't affected. It tracks resistance
-  better than length.
+  better than length. A powered hub's port, with proper pull-downs and its
+  own supply, didn't help (§6.13).
   Is it a VBUS surge or the data lines? Why is the MAX3421E fine with a short
   cable, and why did the same short cable work 7–8 times in 10 on earlier
   days? Next: measure each combination's VBUS–GND loop resistance, then try
