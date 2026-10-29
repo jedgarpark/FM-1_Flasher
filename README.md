@@ -2,7 +2,7 @@
 
 A portable CircuitPython device that stores M-VAVE FM-1 alt firmwares on a microSD card and installs them over USB MIDI SysEx, with no computer needed. Plug the FM-1 into the flasher, pick a firmware on the touchscreen, and tap Install.
 
-**Status:** installs work from the device's REPL. V15 → SLOOP takes 70 s, SLOOP → V15 with factory voices 73 s, and V15 → ChoralRoot 69 s. The touchscreen UI isn't started.
+**Status:** works end to end on the touchscreen. Browse the firmwares on the card as picture cards or a two-column text list, mark favourites, open a firmware's details, and install it. Installs take about 70 s (V15 → SLOOP 70 s, SLOOP → V15 with factory voices 73 s, V15 → ChoralRoot 69 s).
 
 - [PLAN.md](PLAN.md): roadmap and current status.
 - [DEVNOTES.md](DEVNOTES.md): what we tried and learned, with evidence.
@@ -11,9 +11,11 @@ A portable CircuitPython device that stores M-VAVE FM-1 alt firmwares on a micro
 
 ## Hardware
 
-- Adafruit Feather RP2040 USB Host, running CircuitPython 10.3.1 built with the patches in `patches/`
-- Adafruit USB Host FeatherWing with MAX3421E (PID 5858): the USB host for the FM-1
-- Adafruit TFT FeatherWing V2 3.5" 480x320 capacitive touch (PID 5872). Its D9/D10 clash with the MAX3421E wing still needs resolving.
+- Adafruit Feather RP2040 USB Host, running CircuitPython 11.0.0-alpha.2 built with the patches in `patches/`
+- The FM-1 plugs into the Feather's built-in USB-A (PIO) port through a long USB cable (2 m tested, Adafruit 6279). With a short cable the FM-1 stays silent.
+- Adafruit TFT FeatherWing V2 3.5" 480x320 capacitive touch (PID 5872): the display, touch, and the microSD card that holds the firmwares
+
+The Adafruit USB Host FeatherWing with MAX3421E (PID 5858) also works as the USB host, on CircuitPython 10.3.1, but its D9/D10 clash with the TFT FeatherWing. See [PLAN.md](PLAN.md) for the alternatives.
 
 ## Development
 

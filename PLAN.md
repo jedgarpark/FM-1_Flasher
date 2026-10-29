@@ -23,9 +23,9 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 |---|---|
 | 0: protocol, parser, simulator, SD prep (CPython) | Done (DEVNOTES §2) |
 | 1: desktop flasher on real hardware | Done: V15 ↔ SLOOP both ways, rescue path tested (§3) |
-| 2: hardware spikes on the Feather | Done: FM-1 enumeration fixed, MAX3421E chosen, long SysEx verified (§4–5) |
-| 3: install path on device | Working from the REPL: V15 → SLOOP 70 s, SLOOP → V15 + voices 73 s, V15 → ChoralRoot 69 s (§6). Open items below |
-| 4: UI | Not started |
+| 2: hardware spikes on the Feather | Done: FM-1 enumeration fixed, USB host on the built-in PIO port (MAX3421E also works), long SysEx verified (§4–6.8) |
+| 3: install path on device | Done: V15 → SLOOP 70 s, SLOOP → V15 + voices 73 s, V15 → ChoralRoot 69 s (§6). Packages read from microSD |
+| 4: UI | Done: touch UI lists, filters and installs the card's firmwares (§6.9–6.11). Open items below |
 | 5: hardening, extras | Not started |
 
 ## Phase 0: Desk work on CPython, no hardware (done)
@@ -46,9 +46,9 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - **Not yet checked:**
   - **Battery operation.** With USB connected, the LiPo is switched out of the boost input, so only a battery-only test is meaningful.
 
-## Phase 3: Install path on device
+## Phase 3: Install path on device (done)
 
-Today, `device/fm1_install.py` runs from the REPL after `device/fm1_max_setup.py`:
+The touch UI runs installs now (Phase 4). From the REPL, `device/fm1_install.py` still works after `device/fm1_max_setup.py`:
 1. verify the package
 2. dry run
 3. `run(folder, go=True)`
@@ -56,22 +56,28 @@ Today, `device/fm1_install.py` runs from the REPL after `device/fm1_max_setup.py
 It uses 64-byte paced writes with adaptive slow-down, and prints a ring of recent messages on failure.
 
 Open items:
-- [ ] Read packages from microSD instead of CIRCUITPY.
-- [ ] Verify the package sha256 once, when it's copied or prepared, and cache the result. That saves 8–12 s per install.
-- [ ] Handle a missing FM-1. If none appears within ~10 s, at the start or after each self-reboot during an install, prompt the user (check the cable, power-cycle) instead of timing out.
+- [x] Read packages from microSD instead of CIRCUITPY.
+- [x] Trust the package checks `make_sd.py` ran when the whole-file SHA-256 matches. The check went from 16–27 s to about 4 s (DEVNOTES §6.10).
+- [x] Handle a missing FM-1: Connect FM-1 says when none answers, and a failed install says to power-cycle the FM-1.
 - [x] Retry the V15 voice restore once when V15 re-enumerates after its first boot (DEVNOTES §6.7).
-- [ ] CircuitPython 11 `hashlib` can give wrong digests on a fragmented heap (DEVNOTES §6.7). Until it's fixed, soft-reset before an install; then file it upstream with a repro.
+- [ ] CircuitPython 11 `hashlib` can give wrong digests on a fragmented heap (DEVNOTES §6.7, §6.9). Worked around: the UI installs after a soft reload, hashes 1 KB at a time and recomputes a mismatch. Still to file upstream with a repro.
 - [ ] Optionally start slowed for community firmware and loaders, to avoid the ~3 s loader retry when a reply is lost.
 - [ ] Fix the `RealCommunityPackages` test's folder layout (`FM1_TEST_PKGS`).
 - [ ] Update the upstream issue draft in `docs/`: the enumeration retry (TinyUSB) and the buffer size (CircuitPython). Post only after review.
 
-## Phase 4: UI
+## Phase 4: UI (done)
 
-- Firmware list, details screen, and Install, with an extra confirmation for legacy routes.
-- Progress bar driven by read-request addresses. Show "Restarting…" during re-enumeration, and the power-cycle prompt when the FM-1 doesn't reappear.
-- "Back to official V15".
-- Display and touch go behind a small abstraction. FT5336 touch points are native portrait; map them to the 480x320 landscape frame.
-- Keep console printing off the screen during installs; it slowed the voice restore from 1.8 s to 6.6 s (DEVNOTES §6.8).
+`device/code.py` starts the touch UI in `lib/fm1ui/` (DEVNOTES §6.9–6.11):
+- Firmware list as six picture cards or a two-column text list of 16 names a page, with a tag filter, favourites, and the catalogue's date.
+- Details screen, Connect FM-1, a confirm screen naming what gets replaced, and "Back to official V15" by installing M-VAVE V15 from the list.
+- The install runs after a soft reload, on a fresh heap. The progress screen shows the phase, a bar, elapsed time, "Waiting for the FM-1 to restart…", and the power-cycle hint after a failure.
+- Console printing stays off the screen during installs; it slowed the voice restore from 1.8 s to 6.6 s (DEVNOTES §6.8).
+
+Open items:
+- [ ] An extra confirmation for legacy routes.
+- [ ] A white screen once after replugging the FM-1 during a failed install (§6.9). Not explained.
+- [ ] The Mac calls the SD card's drive unreadable after a hard reset (§6.9). Eject is safe.
+- [ ] Optional: build the SD card's firmware folder with a GitHub Action, so refreshing the card needs no command line.
 - Prerequisite with the MAX3421E wing only: resolve its D9/D10 pin clash with the TFT FeatherWing.
 
 ## Phase 5: Hardening, then extras
@@ -97,15 +103,15 @@ Open items:
 lib/fm1proto.py      # protocol + package parsing (CPython and CircuitPython)
 lib/fm1update.py     # install state machine over a transport (CPython and CircuitPython)
 lib/fm1usb.py        # USB-MIDI host transport (CircuitPython)
-device/              # on-device scripts: installer, MAX3421E setup, diagnostics
+lib/fm1ui/           # touch UI: screens, drawing, catalogue and state, device glue (CircuitPython)
+device/              # code.py (UI entry point) and on-device scripts: installer, MAX3421E setup, diagnostics
+fonts/               # bitmap fonts for the UI
 tools/               # make_sd.py, flash_cli.py, fake_fm1.py (simulated FM-1), usb_descriptors.py
 tests/               # CPython unit tests
 patches/             # CircuitPython / TinyUSB / Pico-PIO-USB patches (see patches/README.md)
 docs/                # upstream issue drafts
 ref/                 # upstream clones, builds, flash dumps (gitignored)
 ```
-
-Planned: `lib/ui/` (display/touch abstraction and screens) and `code.py` (device entry point).
 
 ## Workflow
 
