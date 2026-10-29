@@ -856,8 +856,13 @@ SLOOP → V15 with factory voices over the 2 m cable: 93.5 s, no resends.
   and 22 cm plus the 14 cm panel-mount lead doesn't. The chain is thin wire
   and four extra contacts, so it adds far more **resistance** per cm than a
   normal cable. Resistance fits every row: the 1 m (0.36 Ω VBUS–GND, §6.7)
-  is borderline, and the 2 m (1.3 Ω) never fails. **Unmeasured:** the loop
-  resistance of the other combinations.
+  is borderline, and the 2 m (1.3 Ω) never fails. Two more VBUS–GND
+  readings (same TREEDIX tester): the yellow cable alone 0.151 Ω (§6.7 read
+  about 0.2 Ω), and the yellow cable + the chain 0.48 Ω, so the chain adds
+  about 0.33 Ω. Neither has been run with V15 directly on the Feather (only
+  the bare cable behind a hub, §6.13); if resistance
+  decides it, the chain version should mostly connect and the bare cable
+  shouldn't. **Unmeasured:** the loop resistance of the other combinations.
 - **The firmware matters.** Every cable worked with SLOOP, including the
   three short ones that fail with V15. §6.7 cleared the firmware, but only on
   the long pigtail, where both work.
