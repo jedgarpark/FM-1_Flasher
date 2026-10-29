@@ -35,6 +35,27 @@ tools/make_sd.py --out /Volumes/SDCARD --catalog sloop felucca   # from the FM-1
 
 Each firmware goes in `firmware/<slug>/` as the `.fwsc` and a `meta.json`. Every package is checked the same way the device checks it.
 
+### Refreshing the firmware list from the FM-1 Firmware Hub
+
+The flasher never goes online. To pick up new firmwares, or new versions, from [thefirmwarehub.com](https://thefirmwarehub.com/), refresh the card from a computer:
+
+1. Power off the flasher and take the microSD card out of the TFT FeatherWing.
+2. Put the card in a card reader on the computer. On a Mac it mounts as `/Volumes/<name>`, for example `/Volumes/FMFLASH`.
+3. Install Pillow once, for the card pictures: `python3 -m pip install Pillow`.
+4. Run:
+
+   ```sh
+   tools/make_sd.py --out /Volumes/FMFLASH --catalog
+   ```
+
+   With no ids, this fetches every firmware in the catalogue plus M-VAVE V15. Packages already on the card are kept when their SHA-256 still matches the catalogue, so only new or changed ones download. Each download is checked against the catalogue's SHA-256 and size, then with the device's full package checks. The run ends with `index: N firmwares` and exits with an error if any package was rejected.
+5. Eject the card, put it back in the flasher, and power it on. The list screen shows the new firmwares and the catalogue's date.
+
+Notes:
+- **Removed firmwares stay on the card.** A firmware the hub drops isn't removed. The list shows every folder in `firmware/`, so delete the folder by hand, then rerun the command (or any `make_sd.py` run) to rebuild `firmware/index.txt`.
+- **Favourites survive.** They're kept with the install record in `flasher.json` at the card's root, which `make_sd.py` never touches.
+- **Don't write to the card while it's in the flasher.** With the flasher plugged into the computer, the card also appears as a drive (FMFLASH). Writing to it there while the flasher is running hasn't been tested and could corrupt the card. Eject that drive before an install.
+
 ## License
 
 GPL-3.0. The update protocol is ported from M-VAVE's `WebUpdate.js` (GPL-3.0-only WITH GPL-3.0-linking-exception). Each firmware keeps its own license.
