@@ -21,6 +21,7 @@ sys.path[:0] = [os.path.join(ROOT, "lib"), os.path.join(ROOT, "tools")]
 import fm1proto as P  # noqa: E402
 import fm1update as U  # noqa: E402
 from fake_fm1 import FakeClock, FakeFM1, finder_for  # noqa: E402
+import make_sd  # noqa: E402
 
 STOCK = os.path.join(ROOT, "ref", "fm1_open", "sdk", "firmware", "FM-1_015.fwsc")
 with open(os.path.join(ROOT, "tests", "golden.json")) as _f:
@@ -502,6 +503,29 @@ if __name__ == "__main__":
 
 
 PKGS = os.environ.get("FM1_TEST_PKGS")
+
+
+class Catalog(unittest.TestCase):
+    CAT = {"stock": {"pkg": "fw/mvave/FM-1_015.fwsc"},
+           "firmwares": [{"id": "sloop", "pkg": "fw/sloop.fwsc", "install": None},
+                         {"id": "fizz", "pkg": "fw/fizz.fwsc", "install": "https://example.com/fizz/install/"},
+                         {"id": "nopkg", "pkg": None}]}
+
+    def test_own_installers_are_left_out(self):
+        ids = [e["id"] for e in make_sd.catalog_entries(self.CAT, [])]
+        self.assertEqual(ids, ["stock-v15", "sloop"])
+        with self.assertRaises(SystemExit):
+            make_sd.catalog_entries(self.CAT, ["fizz"])
+
+    def test_own_installers_are_removed_from_the_card(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as out:
+            for slug, cid in (("fizz", "fizz"), ("sloop", "sloop")):
+                os.makedirs(os.path.join(out, "firmware", slug))
+                with open(os.path.join(out, "firmware", slug, "meta.json"), "w") as f:
+                    json.dump({"catalog_id": cid}, f)
+            make_sd.remove_own_installers(self.CAT, out)
+            self.assertEqual(os.listdir(os.path.join(out, "firmware")), ["sloop"])
 
 
 @unittest.skipUnless(PKGS, "set FM1_TEST_PKGS to a folder of community .fwsc files")
