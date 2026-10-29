@@ -36,7 +36,10 @@ this file has the story and the evidence. Dates are 2026.
   silent: it switches to USB host role
   ([§6.6](#66-what-the-silent-state-is-oct-27),
   [§6.7](#67-cable-length-decides-it-oct-27)). A 30 cm USB-A pigtail on D11/D12
-  works the same way, which leaves D9/D10 free.
+  works the same way, which leaves D9/D10 free. It's probably the cable's
+  resistance rather than its length, and it's V15 that goes silent: SLOOP
+  connected on every short cable tried
+  ([§6.12](#612-cables-again-not-length-alone-and-v15-is-the-picky-one-oct-29)).
 - **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
   V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
   V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
@@ -813,6 +816,87 @@ Feather from the REPL:
 - **Rule for this codebase:** to drop a large object held in a dict or
   instance attribute on CircuitPython, overwrite it before deleting it.
 
+### 6.12 Cables again: not length alone, and V15 is the picky one (Oct 29)
+
+Feather 2, TFT FeatherWing, built-in PIO port, the touch UI's Connect FM-1
+button (6 s wait). The serial log, with a note at each swap, is
+`logs/cable-test-20261029.log`. "0 queries" in a failure means the FM-1
+never appeared on the bus: the silent state of §6.6.
+
+**V15 on the FM-1:**
+
+| Between the Feather and the FM-1 | Connects |
+|---|---|
+| 2 m blue (6279) | 5 of 5 |
+| 1 m blue + panel-mount socket (14 cm lead) | 1 of 1 |
+| 1 m blue + the §6.7 chain (4449 pigtail, 30 cm 28 AWG → jumpers → 3628 plug) | 1 of 1 |
+| 22 cm cable + the chain | 1 of 1 |
+| Ferrite bead cable + the chain | 1 of 1, then V15 → SLOOP in 83 s, no resends |
+| 1 m blue alone, from a known-good FM-1 | 1 of 5 |
+| 22 cm cable + panel-mount socket | 0 of 1 |
+| Ferrite bead cable + panel-mount socket | 0 of 1 |
+| Ferrite bead cable alone, either angle | 0 of 2 |
+
+**SLOOP on the FM-1:**
+
+| Between the Feather and the FM-1 | Connects |
+|---|---|
+| 1 m blue alone (2 with the Feather end plugged first, 1 with the FM-1 end first) | 4 of 4 |
+| Ferrite bead cable alone | 1 of 1 |
+| Yellow cable alone | 1 of 1 |
+| Yellow cable + the chain | 1 of 1 |
+
+SLOOP → V15 with factory voices over the 2 m cable: 93.5 s, no resends.
+
+**What this shows:**
+- **Length alone doesn't decide it.** 22 cm plus the chain (about 55–60 cm,
+  much of it 28 AWG and jumpers) works, the 1 m cable alone mostly doesn't,
+  and 22 cm plus the 14 cm panel-mount lead doesn't. The chain is thin wire
+  and four extra contacts, so it adds far more **resistance** per cm than a
+  normal cable. Resistance fits every row: the 1 m (0.36 Ω VBUS–GND, §6.7)
+  is borderline, and the 2 m (1.3 Ω) never fails. **Unmeasured:** the loop
+  resistance of the other combinations.
+- **The firmware matters.** Every cable worked with SLOOP, including the
+  three short ones that fail with V15. §6.7 cleared the firmware, but only on
+  the long pigtail, where both work.
+- **Plug order doesn't explain it.** With SLOOP both orders worked. With
+  V15 on the 1 m the Feather end first worked once, then the FM-1 end first
+  failed, then the Feather end first failed too.
+- **A failed attempt doesn't trap the FM-1.** After each short-cable failure
+  from a good state, the 2 m connected at once with no power cycle (4 checks).
+- **The yellow cable carries data.** It's the "charge-only" cable of §6.7.
+  The Mac probably didn't see the FM-1 through it then because the FM-1 was
+  already in host role (below).
+
+**The stuck state, once.** At the start the FM-1 (V15) failed 8 times on the
+1 m and then on the 2 m too. That was through FM-1 power cycles, a USB-C
+replug at the FM-1 and a Feather reset. The Mac didn't list it either at
+first. A power cycle while plugged into the Mac brought it back as `FM-1`
+(vendor `0x4C4A`), and the 2 m then connected at once. What put it there is
+unknown. It may have been stuck before the session started.
+
+**A working theory, untested:** when the FM-1 connects, its input
+capacitance and charger draw a surge from the Feather's 5 V. A low-resistance
+cable lets VBUS dip or ring at the FM-1. V15 reads that as the host going
+away, reruns its role detection and settles on host. More series resistance
+softens the surge. This fits resistance over length, and passive parts
+helping. It also fits the Mac and the MAX3421E never doing it (stiffer
+supplies) and SLOOP not minding (a different USB start-up). It doesn't
+explain the 1 m's occasional success, except as a borderline case. To test,
+in order of cost:
+1. Measure the VBUS–GND loop resistance of each combination above.
+2. Try a short cable with ~1 Ω in series in VBUS only. If it then works,
+   the cause is power, not the data lines.
+3. Scope VBUS at the FM-1 on plug-in, with a short cable and with the 2 m.
+4. Try 15 kΩ pull-downs on D+/D−, the other suspect (§6.6).
+
+**Also seen:**
+- **The package check took 9.3 s for SLOOP and 22.8 s for V15.** §6.10
+  measured 1.6 s and about 4 s. The SLOOP install also took 19 s from the
+  reload to the start of the check; the V15 one took 5 s. Not yet looked at.
+- **One more failed connect, at 22:46:55,** after the last note. It's unlabelled
+  and left out of the tables.
+
 ---
 
 ## 7. Tools and techniques worth reusing
@@ -869,17 +953,22 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 | The silent state comes from the port's power path or termination (§4.8) | It's the FM-1 choosing host role (§6.6), and on the PIO port it happens with short cables. The boost, the 22 Ω resistors and the board are cleared (§6.7) |
 | CircuitPython 11 doesn't need the Pico-PIO-USB disconnect check (§6.5) | It does: without it the port can stay "connected" to a role-detecting FM-1 and never enumerate it (§6.7) |
 | Grounding the cable shield at the host end prevents the silent state (Oct 27 hypothesis) | It didn't; the cable's length is what mattered (§6.7) |
+| Cable length decides it (§6.7) | Not length alone: 55–60 cm with thin wire and extra contacts works, 1 m of normal cable mostly doesn't. Resistance fits better (§6.12) |
+| The FM-1 firmware doesn't matter (§6.7) | It does on short cables: V15 goes silent, SLOOP connected on all of them (§6.12). On a long cable both work |
+| The yellow cable is charge-only (§6.7) | It carries data; the FM-1 was probably already in host role (§6.12) |
 
 ---
 
 ## 9. Open questions
 
 - **Why does a short cable make the FM-1 pick host role** on the PIO port,
-  when ~30 cm more avoids it (§6.7)? Is it the data lines or VBUS/GND? Why
-  is the MAX3421E fine with a short cable, and why did the same short cable
-  work 7–8 times in 10 on earlier days? It scales with length (§6.7: 0.2 Ω
-  fails, 0.36 Ω recovers, 1.3 Ω never fails). Next: a short cable with ~1 Ω
-  in series in VBUS only, to separate power from the data lines.
+  with V15 but not SLOOP (§6.12)? It tracks resistance better than length.
+  Is it a VBUS surge or the data lines? Why is the MAX3421E fine with a short
+  cable, and why did the same short cable work 7–8 times in 10 on earlier
+  days? Next: measure each combination's VBUS–GND loop resistance, then try
+  a short cable with ~1 Ω in series in VBUS only (§6.12).
+- **Why was the package check slow again** on Oct 29 (9.3 s for SLOOP,
+  22.8 s for V15, against 1.6 s and 4 s in §6.10)?
 - **CircuitPython 11 `hashlib`** wrong digests on a fragmented heap (§6.7):
   needs a standalone repro for an upstream issue.
 - **Why does the MAX3421E lose multi-packet OUT bursts** to the FM-1's loaders
