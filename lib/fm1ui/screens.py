@@ -49,6 +49,10 @@ class Screen:
         self.group = None
         for k in list(self.__dict__):
             if k not in self.KEEP:
+                # None first: MicroPython's dict leaves a deleted entry's
+                # value in its table, where the GC still finds it, so a bare
+                # delattr kept the whole screen alive (26 KB for the text list).
+                setattr(self, k, None)
                 delattr(self, k)
 
     def tap(self, x, y):
@@ -304,17 +308,29 @@ class ListScreen(Screen):
         elif y >= self.next[1] - 8 and x >= W - 140:
             self.turn(1)
         else:
-            for e, card, heart, tile, _ in self.cards:
-                if _hit(heart, x, y):
-                    ui.set_heart(tile, self.app.state.toggle_favorite(e.slug))
-                    if self.favorites_only:
-                        self.app.show()
-                    else:
-                        self.app.refresh()
-                    return
-                if _hit(card, x, y):
-                    self.app.push(DetailScreen(self.app, e))
-                    return
+            e, tile = self._card_at(x, y)
+            if tile is not None:
+                ui.set_heart(tile, self.app.state.toggle_favorite(e.slug))
+                del tile
+                if self.favorites_only:
+                    self.app.show()
+                else:
+                    self.app.refresh()
+            elif e is not None:
+                self.app.push(DetailScreen(self.app, e))
+
+    def _card_at(self, x, y):
+        """(entry, heart tile) for a touch on a heart, (entry, None) for one
+        elsewhere on a card or row, else (None, None). A helper so no loop
+        over self.cards is running when the next screen is built: the loop
+        keeps every card's group alive, and 16 rows' worth ran the detail
+        screen out of memory."""
+        for e, card, heart, tile, _ in self.cards:
+            if _hit(heart, x, y):
+                return e, tile
+            if _hit(card, x, y):
+                return e, None
+        return None, None
 
     def swipe(self, dx):
         self.turn(1 if dx < 0 else -1)
@@ -357,6 +373,24 @@ class DetailScreen(Screen):
             tags.append(("beta", ui.WARN))
         if m.get("license"):
             tags.append((m["license"], ui.DIM))
+        x0 = 186
+        # The description's lines are the screen's largest text bitmaps (up
+        # to 1 KB each), so they're made first, while the heap still has the
+        # big gaps the list screen left.
+        y = 76 + (22 if author else 0) + 20 + 30
+        lines = []
+        rest = desc
+        width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
+        while rest and y + 16 <= 276:
+            left = x0 if y < 212 else 12
+            line = C.wrap(rest, width_of, W - left - 12)[0]
+            rest = rest[len(line):].lstrip(" ")
+            if rest and y + 34 > 276:  # last line that fits
+                line = C.ellipsize(line + " " + rest, width_of, W - left - 12 if left == x0 else 300)
+                rest = ""
+            lines.append(ui.text(ui.BODY, line, ui.TEXT, left, y, (0, 0)))
+            y += 18
+        del rest
 
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
@@ -371,7 +405,6 @@ class DetailScreen(Screen):
         g.append(ui.outlined(11, 47, 162, 162, ui.THUMB_BG, ui.LINE, 1))
         g.append(ui.thumbnail(app.path(e.slug, "large.bmp"), 12, 48, 160, e.version))
 
-        x0 = 186
         tf = ui.title_font(e.name)
         name = C.ellipsize(e.name, lambda s: ui.width(tf, s), W - x0 - 60)
         g.append(ui.text(tf, name, ui.FG, x0, 48, (0, 0)))
@@ -392,21 +425,8 @@ class DetailScreen(Screen):
             tx += w + 6
         y += 30
 
-        # Description: beside the picture, then full width under it.
-        lines = []
-        rest = desc
-        width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
-        while rest and y + 16 <= 276:
-            left = x0 if y < 212 else 12
-            line = C.wrap(rest, width_of, W - left - 12)[0]
-            rest = rest[len(line):].lstrip(" ")
-            if rest and y + 34 > 276:  # last line that fits
-                line = C.ellipsize(line + " " + rest, width_of, W - left - 12 if left == x0 else 300)
-                rest = ""
-            lines.append((left, y, line))
-            y += 18
-        for left, ly, line in lines:
-            g.append(ui.text(ui.BODY, line, ui.TEXT, left, ly, (0, 0)))
+        for line in lines:
+            g.append(line)
 
         self.bar_at = len(g)
         g.append(self.bar())

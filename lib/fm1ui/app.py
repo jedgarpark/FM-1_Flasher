@@ -171,6 +171,12 @@ class App:
                 self.step()
             except MemoryError as e:  # back to the list rather than stop
                 print("MemoryError:", e, "on", type(self.stack[-1]).__name__)
+                try:
+                    import traceback
+                    traceback.print_exception(e)
+                except (ImportError, MemoryError):
+                    pass
+                e = None  # its traceback holds the failed screen's objects
                 self.pressed = None
                 del self.stack[1:]
                 self.display.root_group = self.blank
