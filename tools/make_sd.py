@@ -18,6 +18,10 @@ Sources:
                          catalogue, with the hub's card pictures as
                          thumb.bmp/large.bmp (needs Pillow). Packages already
                          on the card are reused when their SHA-256 matches.
+                         Firmwares the hub sends to their own installer
+                         (an `install` link: they write data the package
+                         doesn't carry) are left out, and removed from the
+                         card if an earlier run put them there.
 
 Every run rewrites firmware/index.txt, the list the device's UI reads.
 
@@ -35,6 +39,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import urllib.request
 
@@ -53,9 +58,17 @@ def fetch(url):
         return r.read()
 
 
+def own_installer(e):
+    """True for a firmware the hub sends to its own installer ("Install on its
+    page"): it writes data the package doesn't carry, so installing just the
+    package leaves it asking for that data (FIZZ)."""
+    return bool(e.get("install"))
+
+
 def catalog_entries(cat, ids):
-    """The catalogue's firmwares (all, or only `ids`), with stock V15 first."""
-    entries = [e for e in cat["firmwares"] if e.get("pkg")]
+    """The catalogue's firmwares (all, or only `ids`), with stock V15 first.
+    Firmwares with their own installer are left out."""
+    entries = [e for e in cat["firmwares"] if e.get("pkg") and not own_installer(e)]
     stock = cat.get("stock")
     if stock and stock.get("pkg"):
         entries.insert(0, dict(stock, id="stock-v15", name="M-VAVE V15", author="M-VAVE", version="V15",
@@ -66,7 +79,7 @@ def catalog_entries(cat, ids):
         known = {e["id"] for e in entries}
         missing = [i for i in ids if i not in known]
         if missing:
-            sys.exit("not in the catalogue (or no package): " + ", ".join(missing))
+            sys.exit("not in the catalogue, no package, or installs from its own page: " + ", ".join(missing))
         entries = [e for e in entries if e["id"] in ids]
     return entries
 
@@ -83,8 +96,26 @@ def local_package(out, e):
     return None
 
 
+def remove_own_installers(cat, out):
+    """Delete card folders made from catalogue entries that now have their own
+    installer. Only folders whose meta.json names that catalogue id go."""
+    root = os.path.join(out, "firmware")
+    for e in cat["firmwares"]:
+        if not own_installer(e):
+            continue
+        d = os.path.join(root, e["id"])
+        try:
+            if json.load(open(os.path.join(d, "meta.json"))).get("catalog_id") != e["id"]:
+                continue
+        except (OSError, ValueError):
+            continue
+        shutil.rmtree(d)
+        print("removed %s: it installs from its own page, %s" % (e["id"], e["install"]))
+
+
 def from_catalog(ids, out):
     cat = json.loads(fetch(HUB + "catalog.json"))
+    remove_own_installers(cat, out)
     result = []
     for e in catalog_entries(cat, ids):
         data = local_package(out, e)

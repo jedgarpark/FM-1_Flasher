@@ -55,6 +55,7 @@ The flasher never goes online. To pick up new firmwares, or new versions, from [
 
 Notes:
 - **Removed firmwares stay on the card.** A firmware the hub drops isn't removed. The list shows every folder in `firmware/`, so delete the folder by hand, then rerun the command (or any `make_sd.py` run) to rebuild `firmware/index.txt`.
+- **Firmwares with their own installer are left out.** Some firmwares, such as FIZZ, show "Install on its page" on the hub instead of an Install button, because they write data their package doesn't carry. Installed from the package alone, they ask for that data, so `make_sd.py` skips them and removes any an earlier run put on the card. Install those from their own page. Firmwares the hub only links to, such as Baud Girl, aren't in the catalogue and never reach the card.
 - **Favourites survive.** They're kept with the install record in `flasher.json` at the card's root, which `make_sd.py` never touches.
 - **Don't write to the card while it's in the flasher.** With the flasher plugged into the computer, the card also appears as a drive (FMFLASH). Writing to it there while the flasher is running hasn't been tested and could corrupt the card. Eject that drive before an install.
 
