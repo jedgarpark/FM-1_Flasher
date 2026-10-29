@@ -3,7 +3,7 @@
 display, FT5336 touch, microSD), the FM-1 on the USB host port, and running
 an install with a clean heap.
 
-An install is started by saving the firmware's slug in NVM and reloading;
+An install is started by saving the firmware's slug and name in NVM and reloading;
 code.py then runs it before building any other screen. That keeps the
 heap unfragmented, which CircuitPython 11's hashlib needs (DEVNOTES §6.7).
 """
@@ -293,16 +293,18 @@ def _nvm_write(tag, at, data):
 
 
 def pending_install():
-    """The slug of an install queued before the last reload; clears it."""
-    slug = _nvm_read(NVM_TAG, 0)
-    if slug:
+    """The slug of an install queued before the last reload; clears it.
+    It's stored as slug, tab, name (the name is for fm1ui.console)."""
+    queued = _nvm_read(NVM_TAG, 0)
+    if queued:
         microcontroller.nvm[0:4] = b"\0\0\0\0"
-    return slug
+        return queued.partition("\t")[0]
+    return None
 
 
 class Installer:
     def start(self, app, entry):
-        if _nvm_write(NVM_TAG, 0, entry.slug.encode()):
+        if _nvm_write(NVM_TAG, 0, (entry.slug + "\t" + entry.name).encode()):
             supervisor.reload()
         else:  # no NVM: install in place
             if app.probe is not None:

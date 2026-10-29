@@ -6,9 +6,18 @@ the display, touch, text and font libraries (see PLAN.md, Phase 4).
 Firmware comes from /sd/firmware (tools/make_sd.py), or /firmware on CIRCUITPY.
 """
 import gc
+import sys
 
-from fm1ui import device as D
-from fm1ui import ui
+import fm1ui.console
+
+fm1ui.console.show()  # first, before the slow imports: what the restart is for
+# Then drop it, so its code doesn't stay in RAM. None first: a deleted dict
+# entry's value stays in the table, where the GC still finds it (DEVNOTES §6.11).
+sys.modules["fm1ui.console"] = fm1ui.console = None
+del sys.modules["fm1ui.console"], fm1ui.console
+
+from fm1ui import device as D  # noqa: E402
+from fm1ui import ui  # noqa: E402
 
 display, spi = D.display_setup()
 sd = D.mount_sd(spi)
