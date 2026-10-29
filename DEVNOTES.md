@@ -605,8 +605,9 @@ but with the host port on GPIO16/17). All with the same FM-1 on V15:
 | Bead cable → 4449 jack → jumpers → 3628 plug → socket | 10 of 10, then 5 of 5 with the good cable |
 | **A 2 m cable (Adafruit 6279), direct** | **10 of 10** |
 
-A third, plain cable turned out to be charge-only: the Mac didn't see the FM-1
-through it either. Its runs are left out.
+A third, plain cable (the yellow one) seemed to be charge-only: the Mac didn't
+see the FM-1 through it either. Its runs are left out. **It does carry data**
+(§6.12): the FM-1 was probably already in host role.
 
 Over the 2 m cable on the built-in port: V15 → ChoralRoot 0.27 in 71 s, and
 ChoralRoot → V15 in 69 s.
@@ -635,7 +636,7 @@ fit yet:
 | Cable | CC1 | CC2 | VBUS–GND | Shell–GND | On the PIO port |
 |---|---|---|---|---|---|
 | Short, ferrite bead | 56k up | open | ~0.2 Ω | short | Silent, stays silent |
-| Short, yellow (charge-only) | 56k up | open | ~0.2 Ω | short | (no data) |
+| Short, yellow (carries data, §6.12) | 56k up | open | ~0.2 Ω | short | Not run |
 | Blue 1 m (Adafruit, 1 m version of 6279) | 56k up | 56k up | 0.36 Ω | open | Went silent once, then recovered on a later power cycle (two detaches logged) |
 | Blue 2 m (Adafruit 6279) | 56k up | 56k up | 1.3 Ω | open | 10 of 10 |
 
