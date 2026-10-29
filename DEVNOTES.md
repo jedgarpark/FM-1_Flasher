@@ -875,6 +875,46 @@ first. A power cycle while plugged into the Mac brought it back as `FM-1`
 (vendor `0x4C4A`), and the 2 m then connected at once. What put it there is
 unknown. It may have been stuck before the session started.
 
+**Why SLOOP doesn't care: it never asks to be the host.** From SLOOP
+2.8.3's source (the hub's mirror, `src/sloop-2.8.3.tar.gz`), its USB driver
+works at register level (`firmware/hal/fm1_usb.h`, `firmware/src/usb.c`).
+`usb_start()` resets the USB block, waits 25 ms and calls
+`fm1_usb_attach()`, which turns the PHY on and sets the D+ pull-up
+(`/* D+ pull-up: attach */`). There's no role check. If no host answers, it
+retries once a second (`usb_retry`). So SLOOP is a device whatever the
+cable does. V15 is M-VAVE's closed build on JieLi's SDK, which does dual
+role, and it runs the role-detect loop of §4.5 (probably recorded with V15
+on the FM-1). The silent state is that check settling on host. The FM1 Open
+engine library has a `fixed_usb_device_mode` function.
+
+**Only V15 does it: the community firmwares are device-only.** 98 of the
+hub's 115 firmwares have mirrored source (`src/*.tar.gz`). Each one's USB
+start-up, read in the source (not the binaries):
+
+| How it brings up USB | Firmwares | Role check |
+|---|---|---|
+| Own copy of the Felucca / felucca-bsp driver: reset, then the D+ pull-up | 83 | No |
+| fm1-base + felucca-bsp, USB code outside the archive (AMB, Berlinan, CTL, Delrio, Frasil, Loom, Modelar, Polly, Midimon) | 9 | No: felucca-bsp's `chip/usb.c` is the same attach (checked on GitHub) |
+| Felucca, EMB, FIZZ, Kitten, Mycelium: Felucca / SLOOP / ChoralRoot code, USB code not in the archive | 5 | No, by code family (Kitten and Mycelium from their READMEs only) |
+| Bubba: JieLi's SDK stack, V15's family | 1 | `detect_mode = OTG_SLAVE_MODE`, "USB0 solo como dispositivo" |
+
+USB host mode exists only as an opt-in (felucca-bsp's `FELUCCA_USB_HOST`,
+in J6, Melodee and Midimon): a menu switch, and every boot is a device
+("every boot is a device, so the update paths always work", Melodee). Not
+checked: the 17 without mirrored source (zp12, jiant, rainbow, winampfm,
+tribe, cs1, hyp1, tonitor, vector37, tuna, kawa, nmsfm, morpheus, flyfish,
+carnac, s1vave, ptfm). Only SLOOP has been tried on short cables.
+**Consequences:**
+- A first install from V15 needs the long cable, and so does going back to V15.
+  After the write, V15 boots and must enumerate again for the check and the
+  factory voice restore. On a short cable that step may fail, though the new
+  V15 still boots.
+- Between device-only firmwares a short cable should be fine. Shown for SLOOP
+  only.
+
+The question left is electrical: what about a short, low-resistance cable on
+this port makes V15's check pick host?
+
 **A working theory, untested:** when the FM-1 connects, its input
 capacitance and charger draw a surge from the Feather's 5 V. A low-resistance
 cable lets VBUS dip or ring at the FM-1. V15 reads that as the host going
@@ -954,15 +994,16 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
 | CircuitPython 11 doesn't need the Pico-PIO-USB disconnect check (§6.5) | It does: without it the port can stay "connected" to a role-detecting FM-1 and never enumerate it (§6.7) |
 | Grounding the cable shield at the host end prevents the silent state (Oct 27 hypothesis) | It didn't; the cable's length is what mattered (§6.7) |
 | Cable length decides it (§6.7) | Not length alone: 55–60 cm with thin wire and extra contacts works, 1 m of normal cable mostly doesn't. Resistance fits better (§6.12) |
-| The FM-1 firmware doesn't matter (§6.7) | It does on short cables: V15 goes silent, SLOOP connected on all of them (§6.12). On a long cable both work |
+| The FM-1 firmware doesn't matter (§6.7) | It does on short cables: V15 runs a host/device role check that can settle on host, SLOOP is device-only and connected on all of them (§6.12). On a long cable both work |
 | The yellow cable is charge-only (§6.7) | It carries data; the FM-1 was probably already in host role (§6.12) |
 
 ---
 
 ## 9. Open questions
 
-- **Why does a short cable make the FM-1 pick host role** on the PIO port,
-  with V15 but not SLOOP (§6.12)? It tracks resistance better than length.
+- **Why does a short cable make V15's role check pick host** on the PIO port
+  (§6.12)? SLOOP has no role check, so it isn't affected. It tracks resistance
+  better than length.
   Is it a VBUS surge or the data lines? Why is the MAX3421E fine with a short
   cable, and why did the same short cable work 7–8 times in 10 on earlier
   days? Next: measure each combination's VBUS–GND loop resistance, then try
