@@ -860,9 +860,8 @@ SLOOP → V15 with factory voices over the 2 m cable: 93.5 s, no resends.
   readings (same TREEDIX tester): the yellow cable alone 0.151 Ω (§6.7 read
   about 0.2 Ω), and the yellow cable + the chain 0.48 Ω, so the chain adds
   about 0.33 Ω. Neither has been run with V15 directly on the Feather (only
-  the bare cable behind a hub, §6.13); if resistance
-  decides it, the chain version should mostly connect and the bare cable
-  shouldn't. **Unmeasured:** the loop resistance of the other combinations.
+  the bare cable behind a hub, §6.13); if resistance decides it, the chain
+  version should mostly connect and the bare cable shouldn't. **Unmeasured:** the loop resistance of the other combinations.
 - **The firmware matters.** Every cable worked with SLOOP, including the
   three short ones that fail with V15. §6.7 cleared the firmware, but only on
   the long pigtail, where both work.
