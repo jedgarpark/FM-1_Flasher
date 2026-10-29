@@ -783,6 +783,36 @@ Results: the V15 check takes 4.1 s and SLOOP's 1.6 s, and the voice-restore
 extraction drops from 3.9 s to 2.5 s. Most of what's left is the per-byte
 decode and CRC of the 73 KB voice entry.
 
+### 6.11 A deleted attribute stays alive (Oct 28)
+
+In the two-column text list, most taps on a firmware failed to open its
+details: a MemoryError of 0.7–1 KB while building the description lines,
+caught by the app's safety net, which returned to the list. Measured on the
+Feather from the REPL:
+
+- **Releasing the list freed almost nothing.** Free RAM was 58 KB before
+  building the text list, 32 KB with it on screen, and still 31 KB after
+  `Screen.release()` and `gc.collect()`. The card view held back 19 KB the
+  same way. The amount varied from build to build.
+- **The cause is MicroPython's dict deletion.** `release()` drops a
+  screen's displayio handles with `delattr`. MicroPython's map removal
+  marks the slot deleted but leaves the old value pointer in the table, and
+  the GC scans the whole table. So every deleted attribute (`cards`, the
+  buttons, the row groups, and through them the screen's whole group) stayed
+  alive until a later insert happened to reuse the slot.
+- **The fix:** set the attribute to `None`, then delete it. Release now
+  returns the full 26 KB (57 KB free afterwards). A stress test of 60
+  list → details trips across all pages had 0 failures in either view (5 of
+  60 before), with at least 37.5 KB free on the details screen (22–31 KB
+  before).
+- **This probably explains earlier trouble:** the MONK crash (6.9) and the
+  eight-card limit ran into the same retained screens.
+- **Also:** the details screen now makes its description lines first,
+  while the heap's large gaps are still free. The safety net prints a
+  traceback, which is how the failing line was found.
+- **Rule for this codebase:** to drop a large object held in a dict or
+  instance attribute on CircuitPython, overwrite it before deleting it.
+
 ---
 
 ## 7. Tools and techniques worth reusing
