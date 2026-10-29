@@ -12,6 +12,14 @@ The FM-1 is faked (--identity) and installs only animate the progress screen.
 Script steps (--do, in order): "tap X,Y", "press X,Y" (touch down, held), "swipe DX", "shot FILE.png",
 "identity ID" (or "identity none": unplugged), "connect", "phase NAME PCT", "wait", "found",
 "finish ok [MSG]", "finish fail MSG".
+
+Window keys:
+  f  plug or unplug the FM-1 (as --identity; then tap Connect FM-1)
+  x  fail the install that's running
+  s  stall: the FM-1 doesn't come back after its restart, so the install
+     waits there (the power-cycle hint shows after 20 s); s again resumes
+  h  list these keys
+The window's title shows the FM-1's state.
 """
 import argparse
 import os
@@ -106,38 +114,53 @@ class ScriptTouch:
 
 
 class FakeInstaller:
-    """Shows the progress screen. In the window it animates a whole install."""
+    """Shows the progress screen. In the window it animates a whole install,
+    which the window's keys can stall or fail."""
 
     PHASES = (("Staging loader", 4), ("Restarting", 3), ("Writing firmware", 8), ("Verifying", 1))
 
     def __init__(self, animate):
         self.animate = animate
+        self.stall = False  # the FM-1 doesn't come back after its restart
+        self.screen = None
+
+    def running(self):
+        return self.screen is not None and self.screen.done is None
+
+    def fail(self, message):
+        if self.running():
+            self.screen.finish(False, message)
 
     def start(self, app, entry):
-        screen = S.ProgressScreen(app, entry)
+        screen = self.screen = S.ProgressScreen(app, entry)
         app.push(screen)
         if not self.animate:
             return
-        t0 = time.monotonic()
         steps = []
-        t = t0
+        t = 0
         for name, secs in self.PHASES:
             steps.append((t, name, secs))
             t += secs
+        clock = [time.monotonic(), 0.0]  # the last tick, and install time, which a stall stops
         orig_tick = screen.tick
 
         def tick(now):
             if screen.done is None:
+                at, held = clock[1], False
                 for start, name, secs in steps:
-                    if start <= now < start + secs:
+                    if start <= at < start + secs:
                         if name == "Restarting":
                             if screen.waiting_since is None:
                                 screen.wait("app")
+                            held = self.stall
                         else:
-                            screen.phase(name, min(99, int((now - start) * 100 / secs)))
-                if now >= t:
+                            screen.phase(name, min(99, int((at - start) * 100 / secs)))
+                if not held:
+                    clock[1] += now - clock[0]
+                clock[0] = now
+                if clock[1] >= t:
                     app.state.record_install(entry.slug, entry.product)
-                    app.identity = entry.product
+                    app.identity = app.probe.ident = entry.product
                     screen.finish(True, "The FM-1 restarted with %s." % entry.name)
             orig_tick(now)
         screen.tick = tick
@@ -182,11 +205,44 @@ def run_script(app, touch, steps):
             sys.exit("unknown step: " + step)
 
 
-def run_window(app, scale):
+KEYS = """keys: f plug/unplug the FM-1, x fail the install, s stall the FM-1's restart, h this list"""
+
+
+def run_window(app, scale, identity):
     import pygame
     pygame.init()
     win = pygame.display.set_mode((480 * scale, 320 * scale))
-    pygame.display.set_caption("FM-1 Flasher (simulator)")
+    installer = app.installer
+    last = [app.probe.ident or identity]  # what the FM-1 answers as when plugged back in
+
+    def caption():
+        fm1 = ("FM-1 %s plugged in" % app.probe.ident) if app.probe.ident else "no FM-1"
+        stall = ", restart stalls" if installer.stall else ""
+        pygame.display.set_caption("FM-1 Flasher (simulator): %s%s. Keys: f x s h" % (fm1, stall))
+
+    def key(k):
+        if k == "f":
+            if app.probe.ident:
+                last[0], app.probe.ident = app.probe.ident, None
+            else:
+                app.probe.ident = last[0]
+            print("FM-1", "plugged in, as " + app.probe.ident if app.probe.ident else "unplugged")
+            app.next_probe = 0  # notice an unplug at once
+        elif k == "x":
+            if installer.running():
+                installer.fail("No reply from the FM-1 (simulated failure)")
+                print("install failed")
+            else:
+                print("no install running")
+        elif k == "s":
+            installer.stall = not installer.stall
+            print("the FM-1's restart", "stalls" if installer.stall else "goes ahead")
+        elif k == "h":
+            print(KEYS)
+        caption()
+
+    print(KEYS)
+    caption()
     gestures = A.Gestures()
     app.touch = gestures
 
@@ -209,9 +265,8 @@ def run_window(app, scale):
             elif ev.type == pygame.MOUSEBUTTONUP:
                 down = False
                 gestures.sample(None)
-            elif ev.type == pygame.KEYDOWN and ev.unicode == "f":
-                # plug or unplug an FM-1 running stock V15 (then Connect FM-1)
-                app.probe.ident = None if app.probe.ident else "FM-1_015"
+            elif ev.type == pygame.KEYDOWN and ev.unicode:
+                key(ev.unicode.lower())
         if down:
             mx, my = pygame.mouse.get_pos()
             gestures.sample((mx // scale, my // scale))
@@ -235,7 +290,7 @@ def main():
     if args.do:
         run_script(app, touch, args.do)
     else:
-        run_window(app, args.scale)
+        run_window(app, args.scale, args.identity if args.identity != "none" else "FM-1_015")
 
 
 if __name__ == "__main__":
