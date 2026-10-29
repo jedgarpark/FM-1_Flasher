@@ -121,6 +121,7 @@ before any CircuitPython work:
 | Stock V15 | 4C4A:C755 | "FM-1" |
 | Felucca/SLOOP app | 1209:0001 | "Felucca" |
 | Felucca/SLOOP loader | 1209:0002 | "Felucca Update" |
+| V15's update loader (`ota-FM-1_015`) | 4D4A:4155 | "USB Composite Device" (manufacturer "Jieli Technology") |
 
 **Rescue.** A Raspberry Pi Pico running kurogedelic's FM-1 Transporter
 (`a632d92`, with jl-uboot-tool's `wl82loader.bin`), driven by MvaveFM1Unbricker's
@@ -987,6 +988,47 @@ power-off, then nothing. After the run the port still saw no device.
 - **Not tested:** the 2 m cable behind the hub through FM-1 power cycles, and
   an install through the hub.
 
+### 6.14 Stuck in V15's loader, and V15 on the breakout chain (Oct 29)
+
+**V15 over the yellow cable + the chain (0.48 Ω, §6.12).** Installed from
+the touch UI, directly on the PIO port, no hub. V15 went on, but the factory
+voice restore failed. The firmware it replaced, the error text and the
+console weren't recorded. Rerun from the REPL over the 2 m cable
+(`find_fm1`, then `Updater.restore_factory()`), the restore took 5.4 s. A
+first REPL attempt with a fresh `fm1usb.finder` got "no FM-1 answered", the
+§6.9 missed-queries quirk. So V15 got through at least one restart on this
+chain. The likely failure is its re-enumeration after the first boot (§6.7),
+unconfirmed. Borderline, like the 1 m blue.
+
+**Clipper → V15 through a second hub: stuck in V15's loader.** An Anker
+A8365 6-in-1 USB-C PD hub, externally powered, on the PIO port through a
+USB-C to USB-A adapter, then Adafruit's 1 m purple USB-A to C cable to the
+FM-1. The install never wrote V15: the FM-1 was left in V15's update loader.
+No console log. On the Mac:
+- It enumerated as `4d4a:4155`, "USB Composite Device" from "Jieli
+  Technology", at 12 Mb/s, with a MIDI interface.
+- `flash_cli.py probe`: identity `ota-FM-1_015`, kind loader.
+- `flash_cli.py install sd_out/firmware/stock-v15` connected in resume mode
+  and installed V15 with factory voices in 12 s (the write about 9 s, the
+  restore under 1 s).
+  Log: `logs/install-20261029-093211-FM-1_015.jsonl` (gitignored).
+
+**What probably happened.** From a community firmware, the stock route
+stages V15's loader, the FM-1 restarts into it, and the installer waits for
+`ota-FM-1_015` (`Updater.install`, `lib/fm1update.py`). So staging finished
+and the restart happened, but the loader never reached the Feather or never
+answered. **Hypothesis:** the loader is M-VAVE's code on JieLi's SDK, like
+V15, and runs the same role check, which settled on host behind this hub on
+the 1 m cable. Unproven: the Feather side wasn't watched, and the purple
+cable's resistance isn't measured. It fits that the Mac saw it at once.
+
+**Consequences:**
+- Installs back to V15 need the long cable for the loader step too, not
+  only for V15's first boot.
+- An FM-1 that looks dead after an install may be sitting in a loader. Look
+  on the Mac for `4d4a:4155` (V15's loader) or `1209:0002` (Felucca's) and
+  resume from there with `flash_cli.py install`. No Pico rescue needed.
+
 ---
 
 ## 7. Tools and techniques worth reusing
@@ -1059,6 +1101,9 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
   cable, and why did the same short cable work 7–8 times in 10 on earlier
   days? Next: measure each combination's VBUS–GND loop resistance, then try
   a short cable with ~1 Ω in series in VBUS only (§6.12).
+- **Does V15's update loader run V15's role check** (§6.14)? An FM-1 stuck
+  in it behind a hub on a 1 m cable suggests so. Watch the loader come up on
+  the PIO port with a short cable.
 - **Why was the package check slow again** on Oct 29 (9.3 s for SLOOP,
   22.8 s for V15, against 1.6 s and 4 s in §6.10)?
 - **CircuitPython 11 `hashlib`** wrong digests on a fragmented heap (§6.7):
