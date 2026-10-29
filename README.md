@@ -12,7 +12,7 @@ A portable CircuitPython device that stores M-VAVE FM-1 alt firmwares on a micro
 ## Hardware
 
 - Adafruit Feather RP2040 USB Host, running CircuitPython 11.0.0-alpha.2 built with the patches in `patches/`
-- The FM-1 plugs into the Feather's built-in USB-A (PIO) port through a long USB cable (2 m tested, Adafruit 6279). With a short cable the FM-1 stays silent.
+- The FM-1 plugs into the Feather's built-in USB-A (PIO) port through a long USB cable: use the 2 m one (Adafruit 6279). On a short cable, an FM-1 running M-VAVE's V15 often isn't detected. V15 checks whether it should be a USB host, and on this port with a short cable it sometimes decides it is. Installing from V15, or back to V15, needs the long cable. Community firmwares start as plain USB devices: none of the 98 with source on the hub runs that check, and SLOOP worked on every cable tried. A 1 m cable plus a 14 cm panel-mount socket lead also worked with V15. If the FM-1 isn't detected even on the long cable, plug it into a computer, power-cycle it there, then move it back. Cable details and results are in [DEVNOTES.md](DEVNOTES.md) §6.7 and §6.12.
 - Adafruit TFT FeatherWing V2 3.5" 480x320 capacitive touch (PID 5872): the display, touch, and the microSD card that holds the firmwares
 
 The Adafruit USB Host FeatherWing with MAX3421E (PID 5858) also works as the USB host, on CircuitPython 10.3.1, but its D9/D10 clash with the TFT FeatherWing. See [PLAN.md](PLAN.md) for the alternatives.
