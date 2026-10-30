@@ -90,7 +90,7 @@ Open items:
 - [x] Find out why the V15 package check took 22.6 s in the UI on the RP2350 (5.3 s from the REPL). The computer was reading the SD card over USB at the same time; `CIRCUITPY_SDCARD_USB = false` (set by `tools/deploy.py`) brings it to 1.3 s (DEVNOTES §6.18).
 - [x] Comment on adafruit/circuitpython#11692 that SD-over-USB was on during those tests ([comment](https://github.com/adafruit/circuitpython/issues/11692#issuecomment-6526961492)), mentioning `sdcardio_sdcard_readblocks()` ignoring a lock timeout.
 - [x] Send the shared-SPI-bus fix upstream as a PR: [adafruit/circuitpython#11695](https://github.com/adafruit/circuitpython/pull/11695), merged Oct 30 after mikeysklar's tests (with real SD reads: stuck 10/10 before, 0/10 after). Issue #11692 is closed.
-- [ ] Ask upstream whether the Feather RP2350 build could enable the MAX3421E and the 512-byte enumeration buffer, so a stock CircuitPython works with the wing.
+- [x] Ask upstream whether the Feather RP2350 build could enable the MAX3421E and the 512-byte enumeration buffer, so a stock CircuitPython works with the wing: [adafruit/circuitpython#11697](https://github.com/adafruit/circuitpython/issues/11697). The MAX3421E and the PIO host can't be built together (duplicate `hcd_*` symbols), so it would cost the board `usb_host.Port`.
 - [ ] Optionally report `sdcardio_sdcard_readblocks()` ignoring a lock timeout as its own issue (FatFs gets stale sectors; DEVNOTES §6.18).
 
 ## Phase 5: Hardening, then extras
