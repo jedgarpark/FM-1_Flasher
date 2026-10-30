@@ -83,7 +83,7 @@ Open items:
 - [x] On the Feather RP2350 + wing: rewire the TFT, deploy the UI, and repeat the V15 → SLOOP → V15 round trip from the touchscreen on a short cable. Done, with a fix to CircuitPython's MAX3421E driver for the shared SPI bus (DEVNOTES §6.16).
 - [x] Report the MAX3421E shared-SPI-bus bug upstream (CircuitPython), with the fix from `cp11-feather-rp2350-max3421e.diff`: [adafruit/circuitpython#11692](https://github.com/adafruit/circuitpython/issues/11692).
 - [x] Find out why the V15 package check took 22.6 s in the UI on the RP2350 (5.3 s from the REPL). The computer was reading the SD card over USB at the same time; `CIRCUITPY_SDCARD_USB = false` (set by `tools/deploy.py`) brings it to 1.3 s (DEVNOTES §6.18).
-- [ ] Comment on adafruit/circuitpython#11692 that SD-over-USB was on during those tests; consider reporting `sdcardio_sdcard_readblocks()` ignoring a lock timeout.
+- [x] Comment on adafruit/circuitpython#11692 that SD-over-USB was on during those tests ([comment](https://github.com/adafruit/circuitpython/issues/11692#issuecomment-6526961492)), mentioning `sdcardio_sdcard_readblocks()` ignoring a lock timeout.
 
 ## Phase 5: Hardening, then extras
 
