@@ -4,8 +4,9 @@
 
   .venv/bin/python tools/deploy.py --mpy-cross ref/circuitpython/mpy-cross/build/mpy-cross
 
-Copies code.py, fonts/ (.fmf), lib/fm1ui and the fm1 libraries, and compiles
-the board's adafruit_hx8357/ft5336/register .py files in place. The
+Copies code.py, fonts/ (.fmf), lib/fm1ui and the fm1 libraries, compiles
+the board's adafruit_hx8357/ft5336/register .py files in place, and sets
+CIRCUITPY_SDCARD_USB = false in settings.toml (takes effect after a reset). The
 mpy-cross must match the board's CircuitPython version. A .py of the same
 name on the board is removed, so the .mpy is the one imported.
 """
@@ -23,6 +24,30 @@ VENDOR = ()  # (package, (files...)) from the venv, compiled; none needed now
 VENDOR_MODULES = ()
 # Already on the board as .py (from the bundle): compiled in place to save RAM.
 BOARD_PY = ("adafruit_hx8357.py", "adafruit_ft5336.py", "adafruit_register/i2c_bits.py")
+# Keeps the computer from reading /sd over USB while the flasher uses it: the two
+# collide on the SPI bus and FatFs gets stale sectors (DEVNOTES §6.18).
+SETTINGS = {"CIRCUITPY_SDCARD_USB": "false"}
+
+
+def update_settings(drive):
+    """Set SETTINGS in the board's settings.toml, keeping any other lines."""
+    path = os.path.join(drive, "settings.toml")
+    try:
+        with open(path) as f:
+            lines = f.read().splitlines()
+    except OSError:
+        lines = []
+    lines = [ln for ln in lines if ln.split("=", 1)[0].strip() not in SETTINGS]
+    lines += ["%s = %s" % kv for kv in SETTINGS.items()]
+    text = "\n".join(lines) + "\n"
+    try:
+        with open(path) as f:
+            if f.read() == text:
+                return
+    except OSError:
+        pass
+    with open(path, "w") as f:
+        f.write(text)
 
 
 def compile_to(mpy_cross, src, dst_dir):
@@ -87,9 +112,10 @@ def main():
         dst = os.path.join(fonts, os.path.basename(f))
         if not (os.path.exists(dst) and open(dst, "rb").read() == open(f, "rb").read()):
             shutil.copy(f, fonts)
+    update_settings(args.drive)
     shutil.copy(os.path.join(ROOT, "device", "code.py"), os.path.join(args.drive, "code.py"))
     os.sync()
-    print("deployed %d modules, fonts and code.py to %s" % (n, args.drive))
+    print("deployed %d modules, fonts, settings.toml and code.py to %s" % (n, args.drive))
 
 
 if __name__ == "__main__":
