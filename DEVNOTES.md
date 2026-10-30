@@ -50,6 +50,9 @@ this file has the story and the evidence. Dates are 2026.
   worked from the touchscreen, after a fix to CircuitPython's MAX3421E driver
   for the SPI bus it shares with the display and SD card
   ([§6.16](#616-the-touch-ui-on-the-rp2350--wing-and-a-shared-spi-bus-fix-oct-29)).
+  Grimm ↔ ChoralRoot worked too. One SD I/O error after a Grimm install
+  emptied `flasher.json` and hasn't been reproduced since
+  ([§6.17](#617-an-sd-error-after-a-grimm-install-and-the-wings-floating-cs-oct-29)).
 - **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
   V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
   V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
@@ -1142,6 +1145,59 @@ each reload, and the voice restore finished first time. The V15 package
 check took 22.6 s here against 5.3 s from CIRCUITPY in §6.15; not looked
 into yet (SD reads competing with the host, or the UI's heap).
 
+Reported upstream as
+[adafruit/circuitpython#11692](https://github.com/adafruit/circuitpython/issues/11692).
+
+### 6.17 An SD error after a Grimm install, and the wing's floating CS (Oct 29)
+
+**What happened.** After a V15 → Grimm install from the touchscreen (Grimm
+installed fine), the UI crashed on its next start, building the list:
+
+```
+File "code.py", line 51 → app.py 44 (App.__init__) → catalog.py 91 (tags) → catalog.py 55 (_lines)
+OSError: [Errno 5] Input/output error: /firmware/index.txt
+```
+
+The path is relative to the SD card's mount, so it's `/sd/firmware/index.txt`.
+The reset reason was `RESET_PIN`, and the REPL came up at once, so the UI had
+crashed again on the start after the reset. `/sd/flasher.json` was **0
+bytes**: the state save at the end of the install had opened the file, then
+the write failed. Favourites and the installed firmware were lost; the UI
+copes with an empty file. Read from the REPL with no host running, the card
+was fine: `index.txt` read whole (4,914 bytes, no NULs).
+
+**A panic at host start.** In the same REPL session (no reset after the UI's
+crash), starting the wing with `fm1_max_setup.py` printed `*** PANIC ***`
+(the SDK's `panic()`, `ports/raspberrypi/supervisor/port.c`) and hard-faulted
+into safe mode. The message after it was lost when USB dropped. Not seen
+after a clean reset.
+
+**The wing's CS floats low.** With no `Max3421E` object, D10 reads low: the
+MAX3421E is selected and drives MISO, and `sdcardio.SDCard()` fails (`no SD
+card`, `EAGAIN`). A failed `SDCard()` also leaves D5 claimed ("D5 in use")
+until a reset. With D10 driven high the card answered 5 of 5. The UI starts
+the host before it mounts the card, so it holds D10 high; REPL scripts that
+use the card without the host must drive D10 high themselves.
+
+**Not the supply.** The FM-1 runs on its internal battery while attached. With
+the host started first and the card mounted read-only, nonstop reads of
+`index.txt` through 4 FM-1 power cycles on Grimm (`1209:0001`): **6,621
+reads in 150 s, 0 errors**, every attach seen
+(`logs/rp2350-max-sd-cycle-20261029.log`).
+
+**Then from the touchscreen**, after a clean reset and `flasher.json`
+restored (`logs/rp2350-max-ui2-20261029.log`):
+
+| Install | Total | Package check | Write |
+|---|---|---|---|
+| Grimm → ChoralRoot | 63.9 s | 12.7 s | 41.9 s |
+| ChoralRoot → Grimm | 59.7 s | 7.8 s | 42.7 s |
+
+No errors, `flasher.json` saved both times, every Connect and every return
+answered on the first query. The I/O error didn't come back. The UI felt
+unresponsive for a while when looking for Grimm in the list; the console
+shows nothing for it (the UI only logs connects and installs).
+
 ---
 
 ## 7. Tools and techniques worth reusing
@@ -1219,7 +1275,15 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
   the PIO port with a short cable. (On the MAX3421E wing it came up in 0.6 s
   on a short cable, §6.15.)
 - **Why was the package check slow again** on Oct 29 (9.3 s for SLOOP,
-  22.8 s for V15, against 1.6 s and 4 s in §6.10)?
+  22.8 s for V15, against 1.6 s and 4 s in §6.10)? On the RP2350 + wing it's
+  3.3–5.3 s from the REPL but 7.8–22.6 s in the UI (§6.16–6.17).
+- **What caused the SD I/O error after the Grimm install** (§6.17), and the
+  panic at host start that followed it? Not reproduced since: not by SD reads
+  through FM-1 power cycles, nor by two more installs from the UI. Writes to
+  the card and display refreshes while the FM-1 reboots are untested.
+- **Why did the UI turn unresponsive** while browsing on the RP2350 + wing
+  (§6.17)? The display and SD card holding the shared bus, or something
+  else? Needs timing in the UI loop.
 - **CircuitPython 11 `hashlib`** wrong digests on a fragmented heap (§6.7):
   needs a standalone repro for an upstream issue.
 - **Why does the MAX3421E lose multi-packet OUT bursts** to the FM-1's loaders
@@ -1229,4 +1293,5 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
   once; a Feather reset only sometimes, and FM-1 power cycles not at all.
 - **Battery operation** of the whole flasher: untested.
 - **Phase 4 hardware:** the MAX3421E wing (CS D10, IRQ D9) and the 3.5" TFT
-  FeatherWing (TFT CS D9, DC D10) clash. One board needs rework.
+  FeatherWing (TFT CS D9, DC D10) clash. Resolved on the RP2350 by rewiring
+  the TFT's CS and DC to D11 and D4 (§6.16).
