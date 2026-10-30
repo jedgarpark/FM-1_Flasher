@@ -41,6 +41,15 @@ this file has the story and the evidence. Dates are 2026.
   connected on every short cable tried
   ([§6.12](#612-cables-again-not-length-alone-and-v15-is-the-picky-one-oct-29)). A powered USB hub in between doesn't help
   ([§6.13](#613-a-powered-usb-hub-doesnt-help-v15-oct-29)).
+- **A Feather RP2350 with the MAX3421E wing handles V15 on a short cable.**
+  On the yellow cable (0.15 Ω), alone: 9 of 9 FM-1 power cycles, V15 → SLOOP
+  in 55 s and SLOOP → V15 with voices in 47 s, with no lost replies and about
+  400 KB free
+  ([§6.15](#615-feather-rp2350--max3421e-wing-v15-on-a-short-cable-oct-29)).
+  With the TFT rewired to D11/D12 and the touch UI, the same round trip
+  worked from the touchscreen, after a fix to CircuitPython's MAX3421E driver
+  for the SPI bus it shares with the display and SD card
+  ([§6.16](#616-the-touch-ui-on-the-rp2350--wing-and-a-shared-spi-bus-fix-oct-29)).
 - **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
   V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
   V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
@@ -1029,6 +1038,110 @@ cable's resistance isn't measured. It fits that the Mac saw it at once.
   on the Mac for `4d4a:4155` (V15's loader) or `1209:0002` (Felucca's) and
   resume from there with `flash_cli.py install`. No Pico rescue needed.
 
+### 6.15 Feather RP2350 + MAX3421E wing: V15 on a short cable (Oct 29)
+
+**Why.** The MAX3421E wing never produced the silent state (§4.8), and the
+RP2040's RAM is the UI's tightest limit (about 25–31 KB free with the UI up,
+§6.10–6.11). The Feather RP2350 (no PSRAM) has 520 KB of SRAM.
+
+**Build.** CircuitPython 11.0.0-alpha.2 for `adafruit_feather_rp2350` with
+`patches/cp11-feather-rp2350-max3421e.diff`: `CIRCUITPY_MAX3421E = 1`,
+`CIRCUITPY_USB_HOST = 0` and `CFG_TUH_ENUMERATION_BUFSIZE=512`, at the
+default clock (the 120 MHz was for PIO-USB). 483 KB of RAM left for stack
+and heap at build time. CircuitPython 11's own enumeration retry, no TinyUSB
+patch.
+
+**Setup.** The wing on CS D10, IRQ D9 (`device/fm1_max_setup.py`), no TFT,
+its 5V jumper open. The FM-1 on V15, on the **yellow cable alone (0.151 Ω)**,
+the lowest-resistance cable we have. Driven from the REPL over the USB
+console. Once the wing started, V15 attached within 1–2 s. Free RAM: 424–432
+KB at the REPL, 397–408 KB before each install.
+
+**Power cycles** (`device/fm1_max_watch.py`, which also counts V15's loader
+`4D4A:4155`): **9 of 9 back**, each 2.8–4.0 s after power-on, none SILENT.
+Log: `logs/rp2350-max-watch-20261029.log`.
+
+**Installs** (`device/fm1_install.py`, full package checks, 64-byte sends):
+
+| Install | Total | Package check | Loader found after the restart | Write | Lost replies |
+|---|---|---|---|---|---|
+| V15 → SLOOP 2.8 | 55.1 s | 3.9 s | 3.1 s (`ota-FM-1_900`; 3 s is the installer's own wait) | 41.6 s, 1203 reads | 0 |
+| SLOOP → V15 + voices | 47.0 s | 5.3 s | 0.6 s (`ota-FM-1_015`) | 30.4 s, 1244 reads | 0 |
+
+In the V15 install, V15 came back 1.8 s after the write and the voice
+restore finished first time in 1.2 s; the installer waited for V15 only
+once. V15 stayed attached afterwards. Logs:
+`logs/rp2350-max-install-v15-sloop-20261029.log` and
+`logs/rp2350-max-install-sloop-v15-20261029.log` (gitignored).
+
+**What this shows:**
+- **The wing gets V15 and its loader through on a short cable** where the
+  RP2040's PIO port didn't (§6.12–6.14). It's one run of each, but it covers
+  every step that has failed: power cycles, V15's loader, and V15's first
+  boot with the voice restore.
+- **Faster than the RP2040.** The full package check took 3.9–5.3 s; on the
+  RP2040 even the reduced check took 9.3–22.8 s (§6.12). Installs were
+  47–55 s, against 70–103 s on the RP2040 and 33–43 s from the Mac.
+- **Still untested** at this point: the TFT and the touch UI on this board
+  (done in §6.16); more cables and more runs.
+
+**Setup snags:**
+- A `code.py` that set up a display left D10 claimed in the REPL ("D10 in
+  use"); `displayio.release_displays()` freed it.
+- `fm1usb` needs `adafruit_usb_host_descriptors` (0.6.0 from PyPI, compiled
+  with mpy-cross 11). Missing, the import fails before anything is sent.
+
+### 6.16 The touch UI on the RP2350 + wing, and a shared-SPI-bus fix (Oct 29)
+
+**Wiring.** The wing stays stock (CS D10, IRQ D9). On the TFT FeatherWing V2
+3.5", the TCS and DC jumpers are cut and wired to **D11** (TFT CS) and the
+**D4** pin (DC). D4 sits where other Feathers have pin 12, so CircuitPython
+calls it `board.D12` (or `IO4`); there is no `board.D4`. D7 (`board.D13`) is
+the red LED, so it stays free. SD CS stays on D5, touch on I2C. Display,
+touch, SD and the wing all worked together from the REPL; `TOUCH_CAL` still
+maps the corners to within a few pixels.
+
+**Code.** `lib/fm1ui/device.py` picks the pins from the build: with
+`max3421e` present the display uses D11/D12 and `host_setup()` starts the
+wing; without it (the RP2040's PIO build) nothing changes. `code.py` calls
+`D.host_setup(spi)` after the display. With the UI up: 338 KB free (the
+RP2040 had 25–31 KB).
+
+**The bug: no FM-1 in the UI, then a hard fault.** On stock CircuitPython 11
+the UI's Connect found no USB device at all (`connect: None after 6.0 s, 0
+queries`), even after an FM-1 power cycle, and once the board hard-faulted
+into safe mode (`SafeModeReason.HARD_FAULT`) while starting up with the FM-1
+attached. The REPL with the host alone found V15 in 0.5 s; the host plus
+nonstop SD reads never found it in 30 s, and the host stayed stuck after.
+Cause, in `shared-module/max3421e/Max3421E.c`: TinyUSB's host task runs as a
+background task, and background tasks also run in the middle of SD and
+display SPI transfers, while those hold the bus lock. Then
+`tuh_max3421_spi_cs_api()` can't get the lock, returns without selecting the
+chip, and `tuh_max3421_spi_xfer_api()` returns false; TinyUSB's MAX3421E
+driver ignores that and acts on register values and FIFO lengths it never
+read. Only the interrupt callback checked the lock first.
+
+**Fix** (in `patches/cp11-feather-rp2350-max3421e.diff`): a new
+`max3421e_spi_busy()`, and `usb_background()` runs `tuh_task()` only when
+the bus is free, otherwise it reschedules itself. After it, the host found
+V15 within the first ~100 of 7,627 SD reads in 30 s and kept it, and through
+a 20 s display refresh loop. The same bug should affect any CircuitPython
+board that shares the wing's SPI bus with a display or SD card; worth
+reporting upstream.
+
+**Round trip from the touchscreen** (yellow cable, 0.15 Ω; firmware from
+the SD card; log `logs/rp2350-max-ui-20261029.log`):
+
+| Install | Total | Package check | Loader found after the restart | Write |
+|---|---|---|---|---|
+| V15 → SLOOP 2.8 | 55.1 s | 3.3 s | 3.1 s (`ota-FM-1_900`) | 42.7 s |
+| SLOOP → V15 + voices | 66.1 s | 22.6 s | 0.7 s (`ota-FM-1_015`) | 31.4 s |
+
+Both Connects answered on the first query, the FM-1 answered at once after
+each reload, and the voice restore finished first time. The V15 package
+check took 22.6 s here against 5.3 s from CIRCUITPY in §6.15; not looked
+into yet (SD reads competing with the host, or the UI's heap).
+
 ---
 
 ## 7. Tools and techniques worth reusing
@@ -1103,7 +1216,8 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
   a short cable with ~1 Ω in series in VBUS only (§6.12).
 - **Does V15's update loader run V15's role check** (§6.14)? An FM-1 stuck
   in it behind a hub on a 1 m cable suggests so. Watch the loader come up on
-  the PIO port with a short cable.
+  the PIO port with a short cable. (On the MAX3421E wing it came up in 0.6 s
+  on a short cable, §6.15.)
 - **Why was the package check slow again** on Oct 29 (9.3 s for SLOOP,
   22.8 s for V15, against 1.6 s and 4 s in §6.10)?
 - **CircuitPython 11 `hashlib`** wrong digests on a fragmented heap (§6.7):

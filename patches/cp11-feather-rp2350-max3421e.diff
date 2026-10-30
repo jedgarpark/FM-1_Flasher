@@ -1,0 +1,86 @@
+diff --git a/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk b/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk
+index 0816bebd09..5bcd81b998 100644
+--- a/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk
++++ b/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk
+@@ -8,3 +8,10 @@ CHIP_PACKAGE = A
+ CHIP_FAMILY = rp2
+ 
+ EXTERNAL_FLASH_DEVICES = "GD25Q64C,W25Q64JVxQ"
++
++# Composite USB audio+MIDI devices (e.g. M-VAVE FM-1, 293 bytes) exceed the default.
++CFLAGS += -DCFG_TUH_ENUMERATION_BUFSIZE=512
++
++# FM-1: host through the MAX3421E USB Host FeatherWing; this board has no PIO host port.
++CIRCUITPY_MAX3421E = 1
++CIRCUITPY_USB_HOST = 0
+diff --git a/shared-module/max3421e/Max3421E.c b/shared-module/max3421e/Max3421E.c
+index 3448cdd4c7..9d6807c103 100644
+--- a/shared-module/max3421e/Max3421E.c
++++ b/shared-module/max3421e/Max3421E.c
+@@ -122,6 +122,24 @@ void max3421e_interrupt_handler(max3421e_max3421e_obj_t *arg) {
+     common_hal_max3421e_max3421e_irq_enabled(self, false);
+ }
+ 
++// tuh_max3421_spi_cs_api() can't wait for a bus that a display refresh or an
++// SD card read holds (they run background tasks while holding it), so it skips
++// the transfer and TinyUSB acts on register values it never read: devices
++// don't enumerate, or the board hard faults. usb_background() asks this first
++// and runs tuh_task() later instead.
++bool max3421e_spi_busy(void) {
++    max3421e_max3421e_obj_t *self = _active;
++    if (self == NULL || common_hal_max3421e_max3421e_deinited(self) ||
++        common_hal_busio_spi_deinited(self->bus)) {
++        return false;
++    }
++    if (!common_hal_busio_spi_try_lock(self->bus)) {
++        return true;
++    }
++    common_hal_busio_spi_unlock(self->bus);
++    return false;
++}
++
+ // API to control MAX3421 SPI CS
+ void tuh_max3421_spi_cs_api(uint8_t rhport, bool active) {
+     max3421e_max3421e_obj_t *self = _active;
+diff --git a/shared-module/max3421e/Max3421E.h b/shared-module/max3421e/Max3421E.h
+index 5710451a57..dae6a7b3fb 100644
+--- a/shared-module/max3421e/Max3421E.h
++++ b/shared-module/max3421e/Max3421E.h
+@@ -34,3 +34,7 @@ void common_hal_max3421e_max3421e_irq_enabled(max3421e_max3421e_obj_t *self, boo
+ 
+ // Queue up the actual interrupt handler for when the SPI bus is free.
+ void max3421e_interrupt_handler(max3421e_max3421e_obj_t *self);
++
++// True when something else holds the SPI bus the MAX3421E shares, so the host
++// task must wait: its transfers would be dropped.
++bool max3421e_spi_busy(void);
+diff --git a/supervisor/shared/usb/usb.c b/supervisor/shared/usb/usb.c
+index fbb00541cb..c2be8998d4 100644
+--- a/supervisor/shared/usb/usb.c
++++ b/supervisor/shared/usb/usb.c
+@@ -47,6 +47,10 @@
+ 
+ #include "tusb.h"
+ 
++#if CIRCUITPY_MAX3421E
++#include "shared-module/max3421e/Max3421E.h"
++#endif
++
+ #if CFG_TUSB_OS == OPT_OS_ZEPHYR
+ #include <zephyr/kernel.h>
+ int CFG_TUSB_DEBUG_PRINTF(const char *format, ...) {
+@@ -161,7 +165,13 @@ void usb_background(void) {
+     if (usb_enabled()) {
+         #if CFG_TUSB_OS == OPT_OS_NONE || CFG_TUSB_OS == OPT_OS_PICO
+         tud_task();
+-        #if CIRCUITPY_USB_HOST || CIRCUITPY_MAX3421E
++        #if CIRCUITPY_MAX3421E
++        if (max3421e_spi_busy()) {
++            usb_background_schedule();  // try again once the bus is free
++        } else {
++            tuh_task();
++        }
++        #elif CIRCUITPY_USB_HOST
+         tuh_task();
+         #endif
+         #elif CFG_TUSB_OS == OPT_OS_FREERTOS

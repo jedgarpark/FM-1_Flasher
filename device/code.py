@@ -20,6 +20,7 @@ from fm1ui import device as D  # noqa: E402
 from fm1ui import ui  # noqa: E402
 
 display, spi = D.display_setup()
+D.host_setup(spi)
 sd = D.mount_sd(spi)
 root = D.firmware_root(sd)
 state = D.DeviceState("/sd/flasher.json" if sd else "/flasher.json")

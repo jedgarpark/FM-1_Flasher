@@ -35,6 +35,24 @@ TOUCH_CAL = (1.077, -17.7, -1.087, 321.2)
 NVM_TAG = b"FM1P"
 ANSWER_WAIT_S = 15  # for the FM-1 to answer again after the install's reload
 
+# A build with max3421e hosts the FM-1 through the MAX3421E USB Host
+# FeatherWing (CS D10, IRQ D9), so the TFT's CS and DC jumpers are cut and
+# wired to D11 and the pin after D13 (D4 on the Feather RP2350's silkscreen,
+# board.D12). DEVNOTES §6.15.
+try:
+    import max3421e
+except ImportError:
+    max3421e = None
+_host = None  # the running Max3421E; usb.core needs it kept alive
+
+
+def host_setup(spi):
+    """Start USB host on the wing, if this build has one. Call after
+    display_setup(), which releases the shared SPI bus."""
+    global _host
+    if max3421e is not None and _host is None:
+        _host = max3421e.Max3421E(spi, chip_select=board.D10, irq=board.D9)
+
 
 def display_setup():
     import adafruit_hx8357
@@ -50,7 +68,11 @@ def display_setup():
     if not spi.try_lock():
         print("SPI was left locked; unlocking")
     spi.unlock()
-    bus = fourwire.FourWire(spi, command=board.D10, chip_select=board.D9, baudrate=24_000_000)
+    if max3421e is not None:
+        dc, cs = board.D12, board.D11
+    else:
+        dc, cs = board.D10, board.D9
+    bus = fourwire.FourWire(spi, command=dc, chip_select=cs, baudrate=24_000_000)
     display = adafruit_hx8357.HX8357(bus, width=W, height=H, auto_refresh=False)
     return display, spi
 
