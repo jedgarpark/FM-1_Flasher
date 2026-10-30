@@ -9,7 +9,7 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 ## Hardware
 
 - **Adafruit Feather RP2040 USB Host.** The CircuitPython build must include the TinyUSB enumeration retry and the 512-byte enumeration buffer (`patches/`).
-- **Candidate replacement: Adafruit Feather RP2350 with the MAX3421E USB Host FeatherWing**, on CircuitPython 11 with `cp11-feather-rp2350-max3421e.diff`. On a short cable (0.15 Ω) it passed 9 of 9 FM-1 power cycles and V15 → SLOOP → V15 with voices in 55 s and 47 s, with about 400 KB free (DEVNOTES §6.15). One run each, without the TFT so far. If it holds up with the TFT and the UI, it replaces the RP2040 and the long-cable rule.
+- **Candidate replacement: Adafruit Feather RP2350 with the MAX3421E USB Host FeatherWing**, on CircuitPython 11 with `cp11-feather-rp2350-max3421e.diff`. On a short cable (0.15 Ω) it passed 9 of 9 FM-1 power cycles and V15 → SLOOP → V15 with voices in 55 s and 47 s, with about 400 KB free (DEVNOTES §6.15). With the TFT rewired (CS D11, DC `board.D12`) and the touch UI, the same round trip worked from the touchscreen, with 338 KB free (§6.16). One run each so far; if it holds up over more runs and cables, it replaces the RP2040 and the long-cable rule.
 - **USB host for the FM-1**, one of:
   - **The Feather's built-in PIO USB-A port with a long cable** (2 m tested, Adafruit 6279), on CircuitPython 11 with `cp11-feather-pio.diff` and `pico-pio-usb-cp11-idle-disconnect.diff`. A short cable leaves the FM-1 silent, stuck in USB host role (DEVNOTES §6.6–6.7).
   - **A USB-A jack pigtail on D11/D12** (Adafruit 4449, 30 cm), with `cp11-feather-pigtail.diff` instead. Frees the built-in socket.
@@ -80,7 +80,9 @@ Open items:
 - [ ] The Mac calls the SD card's drive unreadable after a hard reset (§6.9). Eject is safe.
 - [ ] Optional: build the SD card's firmware folder with a GitHub Action, so refreshing the card needs no command line.
 - Prerequisite with the MAX3421E wing only: resolve its D9/D10 pin clash with the TFT FeatherWing. Plan: leave the wing stock (CS D10, IRQ D9); on the TFT FeatherWing, cut the TFT CS and DC jumpers and wire them to D11 and the D4 position (`board.D12` on the Feather RP2350; avoid D7, the red LED); make the display pins settable in `lib/fm1ui/device.py`.
-- [ ] On the Feather RP2350 + wing: rewire the TFT, deploy the UI, and repeat the V15 → SLOOP → V15 round trip from the touchscreen on a short cable.
+- [x] On the Feather RP2350 + wing: rewire the TFT, deploy the UI, and repeat the V15 → SLOOP → V15 round trip from the touchscreen on a short cable. Done, with a fix to CircuitPython's MAX3421E driver for the shared SPI bus (DEVNOTES §6.16).
+- [ ] Report the MAX3421E shared-SPI-bus bug upstream (CircuitPython), with the fix from `cp11-feather-rp2350-max3421e.diff`.
+- [ ] Find out why the V15 package check took 22.6 s in the UI on the RP2350 (5.3 s from the REPL).
 
 ## Phase 5: Hardening, then extras
 

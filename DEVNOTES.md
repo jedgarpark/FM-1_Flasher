@@ -44,8 +44,12 @@ this file has the story and the evidence. Dates are 2026.
 - **A Feather RP2350 with the MAX3421E wing handles V15 on a short cable.**
   On the yellow cable (0.15 Ω), alone: 9 of 9 FM-1 power cycles, V15 → SLOOP
   in 55 s and SLOOP → V15 with voices in 47 s, with no lost replies and about
-  400 KB free. One run of each, without the TFT so far
+  400 KB free
   ([§6.15](#615-feather-rp2350--max3421e-wing-v15-on-a-short-cable-oct-29)).
+  With the TFT rewired to D11/D12 and the touch UI, the same round trip
+  worked from the touchscreen, after a fix to CircuitPython's MAX3421E driver
+  for the SPI bus it shares with the display and SD card
+  ([§6.16](#616-the-touch-ui-on-the-rp2350--wing-and-a-shared-spi-bus-fix-oct-29)).
 - **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
   V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
   V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
@@ -1078,15 +1082,65 @@ once. V15 stayed attached afterwards. Logs:
 - **Faster than the RP2040.** The full package check took 3.9–5.3 s; on the
   RP2040 even the reduced check took 9.3–22.8 s (§6.12). Installs were
   47–55 s, against 70–103 s on the RP2040 and 33–43 s from the Mac.
-- **Still untested:** the TFT on this board, whose CS and DC need moving off
-  D9/D10 (planned: D11 and the D4 position, `board.D12`); the touch UI;
-  more cables and more runs.
+- **Still untested** at this point: the TFT and the touch UI on this board
+  (done in §6.16); more cables and more runs.
 
 **Setup snags:**
 - A `code.py` that set up a display left D10 claimed in the REPL ("D10 in
   use"); `displayio.release_displays()` freed it.
 - `fm1usb` needs `adafruit_usb_host_descriptors` (0.6.0 from PyPI, compiled
   with mpy-cross 11). Missing, the import fails before anything is sent.
+
+### 6.16 The touch UI on the RP2350 + wing, and a shared-SPI-bus fix (Oct 29)
+
+**Wiring.** The wing stays stock (CS D10, IRQ D9). On the TFT FeatherWing V2
+3.5", the TCS and DC jumpers are cut and wired to **D11** (TFT CS) and the
+**D4** pin (DC). D4 sits where other Feathers have pin 12, so CircuitPython
+calls it `board.D12` (or `IO4`); there is no `board.D4`. D7 (`board.D13`) is
+the red LED, so it stays free. SD CS stays on D5, touch on I2C. Display,
+touch, SD and the wing all worked together from the REPL; `TOUCH_CAL` still
+maps the corners to within a few pixels.
+
+**Code.** `lib/fm1ui/device.py` picks the pins from the build: with
+`max3421e` present the display uses D11/D12 and `host_setup()` starts the
+wing; without it (the RP2040's PIO build) nothing changes. `code.py` calls
+`D.host_setup(spi)` after the display. With the UI up: 338 KB free (the
+RP2040 had 25–31 KB).
+
+**The bug: no FM-1 in the UI, then a hard fault.** On stock CircuitPython 11
+the UI's Connect found no USB device at all (`connect: None after 6.0 s, 0
+queries`), even after an FM-1 power cycle, and once the board hard-faulted
+into safe mode (`SafeModeReason.HARD_FAULT`) while starting up with the FM-1
+attached. The REPL with the host alone found V15 in 0.5 s; the host plus
+nonstop SD reads never found it in 30 s, and the host stayed stuck after.
+Cause, in `shared-module/max3421e/Max3421E.c`: TinyUSB's host task runs as a
+background task, and background tasks also run in the middle of SD and
+display SPI transfers, while those hold the bus lock. Then
+`tuh_max3421_spi_cs_api()` can't get the lock, returns without selecting the
+chip, and `tuh_max3421_spi_xfer_api()` returns false; TinyUSB's MAX3421E
+driver ignores that and acts on register values and FIFO lengths it never
+read. Only the interrupt callback checked the lock first.
+
+**Fix** (in `patches/cp11-feather-rp2350-max3421e.diff`): a new
+`max3421e_spi_busy()`, and `usb_background()` runs `tuh_task()` only when
+the bus is free, otherwise it reschedules itself. After it, the host found
+V15 within the first ~100 of 7,627 SD reads in 30 s and kept it, and through
+a 20 s display refresh loop. The same bug should affect any CircuitPython
+board that shares the wing's SPI bus with a display or SD card; worth
+reporting upstream.
+
+**Round trip from the touchscreen** (yellow cable, 0.15 Ω; firmware from
+the SD card; log `logs/rp2350-max-ui-20261029.log`):
+
+| Install | Total | Package check | Loader found after the restart | Write |
+|---|---|---|---|---|
+| V15 → SLOOP 2.8 | 55.1 s | 3.3 s | 3.1 s (`ota-FM-1_900`) | 42.7 s |
+| SLOOP → V15 + voices | 66.1 s | 22.6 s | 0.7 s (`ota-FM-1_015`) | 31.4 s |
+
+Both Connects answered on the first query, the FM-1 answered at once after
+each reload, and the voice restore finished first time. The V15 package
+check took 22.6 s here against 5.3 s from CIRCUITPY in §6.15; not looked
+into yet (SD reads competing with the host, or the UI's heap).
 
 ---
 
