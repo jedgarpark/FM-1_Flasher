@@ -1,0 +1,247 @@
+diff --git a/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.h b/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.h
+index d0c114a97e..19c8ca8564 100644
+--- a/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.h
++++ b/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.h
+@@ -19,6 +19,10 @@
+ #define DEFAULT_UART_BUS_RX (&pin_GPIO1)
+ #define DEFAULT_UART_BUS_TX (&pin_GPIO0)
+ 
++// FM-1 debug build: console and panics also on TX (GPIO0), 115200.
++#define CIRCUITPY_CONSOLE_UART_TX (&pin_GPIO0)
++#define CIRCUITPY_CONSOLE_UART_RX (&pin_GPIO1)  // required with TX; not wired
++
+ #define CIRCUITPY_PSRAM_CHIP_SELECT (&pin_GPIO8)
+ 
+ #define DEFAULT_DVI_BUS_CLK_DN (&pin_GPIO15)
+diff --git a/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk b/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk
+index 0816bebd09..5bcd81b998 100644
+--- a/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk
++++ b/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk
+@@ -8,3 +8,10 @@ CHIP_PACKAGE = A
+ CHIP_FAMILY = rp2
+ 
+ EXTERNAL_FLASH_DEVICES = "GD25Q64C,W25Q64JVxQ"
++
++# Composite USB audio+MIDI devices (e.g. M-VAVE FM-1, 293 bytes) exceed the default.
++CFLAGS += -DCFG_TUH_ENUMERATION_BUFSIZE=512
++
++# FM-1: host through the MAX3421E USB Host FeatherWing; this board has no PIO host port.
++CIRCUITPY_MAX3421E = 1
++CIRCUITPY_USB_HOST = 0
+diff --git a/ports/raspberrypi/common-hal/busio/SPI.c b/ports/raspberrypi/common-hal/busio/SPI.c
+index f4d86f538d..31244f0d24 100644
+--- a/ports/raspberrypi/common-hal/busio/SPI.c
++++ b/ports/raspberrypi/common-hal/busio/SPI.c
+@@ -5,6 +5,7 @@
+ // SPDX-License-Identifier: MIT
+ 
+ #include "shared-bindings/busio/SPI.h"
++#include "supervisor/shared/tick.h"
+ 
+ #include "shared/runtime/interrupt_char.h"
+ #include "py/mperrno.h"
+@@ -149,7 +150,9 @@ bool common_hal_busio_spi_configure(busio_spi_obj_t *self,
+     return true;
+ }
+ 
+-bool common_hal_busio_spi_try_lock(busio_spi_obj_t *self) {
++// FM-1 debug: [18] who took the lock last (return address), [19] when (ms).
++extern volatile uint32_t fm1_stats[];
++bool __attribute__((noinline)) common_hal_busio_spi_try_lock(busio_spi_obj_t *self) {
+     if (common_hal_busio_spi_deinited(self)) {
+         return false;
+     }
+@@ -157,6 +160,8 @@ bool common_hal_busio_spi_try_lock(busio_spi_obj_t *self) {
+     if (!self->has_lock) {
+         grabbed_lock = true;
+         self->has_lock = true;
++        fm1_stats[18] = (uint32_t)__builtin_return_address(0);
++        fm1_stats[19] = supervisor_ticks_ms32();
+     }
+     return grabbed_lock;
+ }
+diff --git a/shared-bindings/busio/SPI.c b/shared-bindings/busio/SPI.c
+index 6ff7488026..93f494589e 100644
+--- a/shared-bindings/busio/SPI.c
++++ b/shared-bindings/busio/SPI.c
+@@ -499,6 +499,7 @@ busio_spi_obj_t *validate_obj_is_spi_bus(mp_obj_t obj, qstr arg_name) {
+ 
+ // Wait as long as needed for the lock. This is used by SD card access from USB.
+ // The default implementation is to busy-wait while running the background tasks. espressif is different.
++extern volatile uint32_t fm1_stats[];
+ bool common_hal_busio_spi_wait_for_lock(busio_spi_obj_t *self, uint32_t timeout_ms) {
+     uint64_t deadline = supervisor_ticks_ms64() + timeout_ms;
+     while (supervisor_ticks_ms64() < deadline &&
+@@ -508,5 +509,9 @@ bool common_hal_busio_spi_wait_for_lock(busio_spi_obj_t *self, uint32_t timeout_
+         }
+         RUN_BACKGROUND_TASKS;
+     }
++    // FM-1 debug: [20] timeouts, [21] holder's return address, [22] held since (ms ago).
++    fm1_stats[20]++;
++    fm1_stats[21] = fm1_stats[18];
++    fm1_stats[22] = supervisor_ticks_ms32() - fm1_stats[19];
+     return false;
+ }
+diff --git a/shared-module/max3421e/Max3421E.c b/shared-module/max3421e/Max3421E.c
+index 3448cdd4c7..4c35e03264 100644
+--- a/shared-module/max3421e/Max3421E.c
++++ b/shared-module/max3421e/Max3421E.c
+@@ -22,6 +22,15 @@
+ 
+ max3421e_max3421e_obj_t *_active;
+ 
++// FM-1 debug counters, read from Python through memorymap (device/fm1_max_stats.py).
++// [1] int handler with hirq, [2] FRAME, [3] CONDET, [4] RCVDAV, [5] HXFRDN,
++// [6] NAKs, [7] last NAK (addr << 8 | dir << 7 | ep), [8] NAKs on ep0,
++// [9] pin IRQs, [10] callback deferred (bus busy), [11] tuh_task runs,
++// [12] tuh_task deferred, [13] tuh_task max us, [14] tuh_task total us,
++// [15] CS lock failed, [16] delay_ms calls, [17] delay_ms total ms.
++// [18]-[22]: SPI lock holder and wait_for_lock timeouts (busio SPI.c).
++volatile uint32_t fm1_stats[24] = {0x464D3153};
++
+ // Use CP's background callbacks to run the "interrupt" handler. The GPIO ISR
+ // stack is too small to do the SPI transactions that the interrupt handler does.
+ static background_callback_t tuh_callback;
+@@ -84,6 +93,8 @@ void common_hal_max3421e_max3421e_deinit(max3421e_max3421e_obj_t *self) {
+ // tuh_task() which is run as a background task.
+ #if CFG_TUSB_OS == OPT_OS_NONE
+ void tusb_time_delay_ms_api(uint32_t msec) {
++    fm1_stats[16]++;
++    fm1_stats[17] += msec;
+     uint32_t end_time = common_hal_time_monotonic_ms() + msec;
+     while (common_hal_time_monotonic_ms() < end_time) {
+         if (tuh_callback.prev != NULL) {
+@@ -102,6 +113,7 @@ static void tuh_interrupt_callback(void *data) {
+         // calls RUN_BACKGROUND_TASKS.)
+         if (!common_hal_busio_spi_try_lock(self->bus)) {
+             // Come back to us.
++            fm1_stats[10]++;
+             background_callback_add(&tuh_callback, tuh_interrupt_callback, (void *)self);
+ 
+             return;
+@@ -118,10 +130,29 @@ static void tuh_interrupt_callback(void *data) {
+ void max3421e_interrupt_handler(max3421e_max3421e_obj_t *arg) {
+     max3421e_max3421e_obj_t *self = (max3421e_max3421e_obj_t *)arg;
+     // Schedule the CP background callback.
++    fm1_stats[9]++;
+     background_callback_add(&tuh_callback, tuh_interrupt_callback, (void *)self);
+     common_hal_max3421e_max3421e_irq_enabled(self, false);
+ }
+ 
++// tuh_max3421_spi_cs_api() can't wait for a bus that a display refresh or an
++// SD card read holds (they run background tasks while holding it), so it skips
++// the transfer and TinyUSB acts on register values it never read: devices
++// don't enumerate, or the board hard faults. usb_background() asks this first
++// and runs tuh_task() later instead.
++bool max3421e_spi_busy(void) {
++    max3421e_max3421e_obj_t *self = _active;
++    if (self == NULL || common_hal_max3421e_max3421e_deinited(self) ||
++        common_hal_busio_spi_deinited(self->bus)) {
++        return false;
++    }
++    if (!common_hal_busio_spi_try_lock(self->bus)) {
++        return true;
++    }
++    common_hal_busio_spi_unlock(self->bus);
++    return false;
++}
++
+ // API to control MAX3421 SPI CS
+ void tuh_max3421_spi_cs_api(uint8_t rhport, bool active) {
+     max3421e_max3421e_obj_t *self = _active;
+@@ -133,6 +164,7 @@ void tuh_max3421_spi_cs_api(uint8_t rhport, bool active) {
+     if (active) {
+         assert(self->bus_locked == false);
+         if (!common_hal_busio_spi_try_lock(self->bus)) {
++            fm1_stats[15]++;
+             return;
+         }
+         self->bus_locked = true;
+diff --git a/shared-module/max3421e/Max3421E.h b/shared-module/max3421e/Max3421E.h
+index 5710451a57..dae6a7b3fb 100644
+--- a/shared-module/max3421e/Max3421E.h
++++ b/shared-module/max3421e/Max3421E.h
+@@ -34,3 +34,7 @@ void common_hal_max3421e_max3421e_irq_enabled(max3421e_max3421e_obj_t *self, boo
+ 
+ // Queue up the actual interrupt handler for when the SPI bus is free.
+ void max3421e_interrupt_handler(max3421e_max3421e_obj_t *self);
++
++// True when something else holds the SPI bus the MAX3421E shares, so the host
++// task must wait: its transfers would be dropped.
++bool max3421e_spi_busy(void);
+diff --git a/supervisor/shared/usb/usb.c b/supervisor/shared/usb/usb.c
+index fbb00541cb..a233b2cd50 100644
+--- a/supervisor/shared/usb/usb.c
++++ b/supervisor/shared/usb/usb.c
+@@ -47,6 +47,12 @@
+ 
+ #include "tusb.h"
+ 
++#if CIRCUITPY_MAX3421E
++#include "shared-module/max3421e/Max3421E.h"
++#include "hardware/timer.h"
++extern volatile uint32_t fm1_stats[];
++#endif
++
+ #if CFG_TUSB_OS == OPT_OS_ZEPHYR
+ #include <zephyr/kernel.h>
+ int CFG_TUSB_DEBUG_PRINTF(const char *format, ...) {
+@@ -161,7 +167,21 @@ void usb_background(void) {
+     if (usb_enabled()) {
+         #if CFG_TUSB_OS == OPT_OS_NONE || CFG_TUSB_OS == OPT_OS_PICO
+         tud_task();
+-        #if CIRCUITPY_USB_HOST || CIRCUITPY_MAX3421E
++        #if CIRCUITPY_MAX3421E
++        if (max3421e_spi_busy()) {
++            fm1_stats[12]++;
++            usb_background_schedule();  // try again once the bus is free
++        } else {
++            uint64_t t0 = time_us_64();
++            tuh_task();
++            uint32_t us = (uint32_t)(time_us_64() - t0);
++            fm1_stats[11]++;
++            fm1_stats[14] += us;
++            if (us > fm1_stats[13]) {
++                fm1_stats[13] = us;
++            }
++        }
++        #elif CIRCUITPY_USB_HOST
+         tuh_task();
+         #endif
+         #elif CFG_TUSB_OS == OPT_OS_FREERTOS
+diff --git a/lib/tinyusb/src/portable/analog/max3421/hcd_max3421.c b/lib/tinyusb/src/portable/analog/max3421/hcd_max3421.c
+index a3aefb829..7ab5728d3 100644
+--- a/lib/tinyusb/src/portable/analog/max3421/hcd_max3421.c
++++ b/lib/tinyusb/src/portable/analog/max3421/hcd_max3421.c
+@@ -245,6 +245,9 @@ static tuh_configure_max3421_t _tuh_cfg = {
+ #define reg_read  tuh_max3421_reg_read
+ #define reg_write tuh_max3421_reg_write
+ 
++// FM-1 debug counters (shared-module/max3421e/Max3421E.c, device/fm1_max_stats.py).
++extern volatile uint32_t fm1_stats[];
++
+ static void max3421_spi_lock(uint8_t rhport, bool in_isr) {
+   // disable interrupt and mutex lock (for pre-emptive RTOS) if not in_isr
+   if (!in_isr) {
+@@ -899,6 +902,9 @@ static void handle_xfer_done(uint8_t rhport, bool in_isr) {
+   xfer_result_t xfer_result;
+   switch(hresult) {
+     case HRSL_NAK:
++      fm1_stats[6]++;
++      fm1_stats[7] = ((uint32_t) _hcd_data.peraddr << 8) | ((uint32_t) ep_dir << 7) | ep_num;
++      if (ep_num == 0) { fm1_stats[8]++; }
+       if (ep->state == EP_STATE_ABORTING) {
+         ep->state = EP_STATE_IDLE;
+       } else {
+@@ -1015,6 +1021,11 @@ void print_hirq(uint8_t hirq) {
+ void hcd_int_handler(uint8_t rhport, bool in_isr) {
+   uint8_t hirq = reg_read(rhport, HIRQ_ADDR, in_isr) & _hcd_data.hien;
+   if (!hirq) { return; }
++  fm1_stats[1]++;
++  if (hirq & HIRQ_FRAME_IRQ) { fm1_stats[2]++; }
++  if (hirq & HIRQ_CONDET_IRQ) { fm1_stats[3]++; }
++  if (hirq & HIRQ_RCVDAV_IRQ) { fm1_stats[4]++; }
++  if (hirq & HIRQ_HXFRDN_IRQ) { fm1_stats[5]++; }
+   //  print_hirq(hirq);
+ 
+   if (hirq & HIRQ_FRAME_IRQ) {

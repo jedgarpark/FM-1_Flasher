@@ -50,9 +50,11 @@ this file has the story and the evidence. Dates are 2026.
   worked from the touchscreen, after a fix to CircuitPython's MAX3421E driver
   for the SPI bus it shares with the display and SD card
   ([§6.16](#616-the-touch-ui-on-the-rp2350--wing-and-a-shared-spi-bus-fix-oct-29)).
-  Grimm ↔ ChoralRoot worked too. One SD I/O error after a Grimm install
-  emptied `flasher.json` and hasn't been reproduced since
-  ([§6.17](#617-an-sd-error-after-a-grimm-install-and-the-wings-floating-cs-oct-29)).
+  Grimm ↔ ChoralRoot and Grimm ↔ Golana worked too. The SD errors, the slow
+  package checks and the frozen first list were the computer reading the
+  card over USB at the same time; `CIRCUITPY_SDCARD_USB = false` fixes them
+  (package check 1.3 s), and `tools/deploy.py` sets it
+  ([§6.18](#618-the-computer-was-reading-the-sd-card-too-circuitpy_sdcard_usb-oct-30)).
 - **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
   V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
   V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
@@ -1196,7 +1198,68 @@ restored (`logs/rp2350-max-ui2-20261029.log`):
 No errors, `flasher.json` saved both times, every Connect and every return
 answered on the first query. The I/O error didn't come back. The UI felt
 unresponsive for a while when looking for Grimm in the list; the console
-shows nothing for it (the UI only logs connects and installs).
+shows nothing for it (the UI only logs connects and installs). All of this
+turned out to be the computer reading the card over USB (§6.18).
+
+### 6.18 The computer was reading the SD card too: `CIRCUITPY_SDCARD_USB` (Oct 30)
+
+**Symptom.** On the RP2350 + wing the UI's first list after every start took
+~19 s, and package checks in the UI took 7.8–22.6 s (3.3–5.3 s from the
+REPL). After a reset, SD reads took 1.2–3.8 s each instead of 12 ms, in
+steps of 250 ms, sometimes for 10–25 s and sometimes for as long as
+watched (96 s), and file reads came back as `ENOENT` or `Errno 5`.
+
+**Not the FM-1.** It looked tied to the FM-1 enumerating, because every test
+began with a reset. A debug build (`patches/cp11-feather-rp2350-max3421e-stats.diff`,
+read with `device/fm1_max_stats.py`; console and panics also on TX through
+the Pico, `device/uart_log_cdc.py`) showed the USB host idle and cheap: 1,000
+frame interrupts a second, `tuh_task()` ~2.8 ms of CPU a second, 35–54 NAKs
+in all (endpoint 0, during enumeration). Raw `readblocks()` of 64 sectors
+stayed correct and fast (~110 ms) through enumeration. A counter on
+`common_hal_busio_spi_wait_for_lock()` timeouts, with the address of the
+lock's last taker, named the taker: `wait_for_lock()` itself, which its
+comment says is "used by SD card access from USB".
+
+**Cause.** CircuitPython 9+ shows a card mounted with `storage.mount()` to
+the computer as a second USB drive (`CIRCUITPY_SDCARD_USB`, default true);
+`diskutil` listed it as a 15.9 GB disk. After every reset or remount the Mac
+probed it, from the board's background tasks, while the board's own code
+held the bus: each side waited out the other's 250 ms lock timeout. The
+read path FatFs uses, `sdcardio_sdcard_readblocks()`, ignores a lock
+timeout ("No caller actually uses this value") and leaves the buffer as it
+was, so FatFs got stale sectors: the slow reads, `ENOENT`, `Errno 5`. A
+write with stale FAT sectors damages the card: this is the likely cause of
+the empty `flasher.json` (§6.17), and while timing the UI with the card
+mounted read-write (a view switch saved `flasher.json`), the card lost its
+whole `firmware/` folder and its FAT showed the card as nearly empty. The
+card was reformatted (FAT32) and refilled from `sd_out/full/firmware`;
+`.metadata_never_index` on it keeps Spotlight out when it's in the Mac.
+
+**Fix.** `CIRCUITPY_SDCARD_USB = false` in `settings.toml`, read at boot
+(no rebuild); `tools/deploy.py` now sets it. With it, the card no longer
+appears on the Mac and the three-reset test had 0 lock timeouts. The UI's
+`host_setup()` doesn't need a settle wait (tried, removed).
+
+**From the touchscreen after the fix** (`logs/rp2350-max-ui3-20261030.log`):
+
+| Install | Total | Package check | Write |
+|---|---|---|---|
+| Grimm → Golana | 84.4 s | 1.3 s | 73.2 s |
+| Golana → Grimm | 52.6 s | 1.3 s | 42.0 s |
+
+Browsing felt fast; page turns are ~0.75–0.9 s (about 0.45 s of it the
+full-screen refresh, and ~12 ms per `index.txt` open, 16 a list page). Every
+Connect and return answered on the first query. The Golana write took 31 s
+longer than Grimm's for the same size package (610 KB), the same loader and
+no resends; one run, not explained.
+
+**What this changes:**
+- **The shared-SPI-bus driver fix (§6.16) still stands**, but its two
+  motivating failures (no FM-1 in the UI, the hard fault) may partly have
+  been this collision too: SD-over-USB was on throughout.
+- **The wing's floating CS (§6.17) is real** and separate.
+- **The RP2040 builds expose the card the same way**, so the slow package
+  checks there (§6.12) may have had the same cause; untested.
 
 ---
 
@@ -1274,16 +1337,14 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
   in it behind a hub on a 1 m cable suggests so. Watch the loader come up on
   the PIO port with a short cable. (On the MAX3421E wing it came up in 0.6 s
   on a short cable, §6.15.)
-- **Why was the package check slow again** on Oct 29 (9.3 s for SLOOP,
-  22.8 s for V15, against 1.6 s and 4 s in §6.10)? On the RP2350 + wing it's
-  3.3–5.3 s from the REPL but 7.8–22.6 s in the UI (§6.16–6.17).
-- **What caused the SD I/O error after the Grimm install** (§6.17), and the
-  panic at host start that followed it? Not reproduced since: not by SD reads
-  through FM-1 power cycles, nor by two more installs from the UI. Writes to
-  the card and display refreshes while the FM-1 reboots are untested.
-- **Why did the UI turn unresponsive** while browsing on the RP2350 + wing
-  (§6.17)? The display and SD card holding the shared bus, or something
-  else? Needs timing in the UI loop.
+- **Was the slow package check on the RP2040** on Oct 29 (9.3 s for SLOOP,
+  22.8 s for V15, against 1.6 s and 4 s in §6.10) the computer reading the
+  card over USB too? On the RP2350 that was the cause (§6.18): 1.3 s with
+  `CIRCUITPY_SDCARD_USB = false`.
+- **What caused the panic at host start** after the UI's crash (§6.17)? Its
+  message was lost; the debug build now also prints to TX.
+- **Why did the Grimm → Golana write take 73 s** against 42 s for the same
+  size package (§6.18)?
 - **CircuitPython 11 `hashlib`** wrong digests on a fragmented heap (§6.7):
   needs a standalone repro for an upstream issue.
 - **Why does the MAX3421E lose multi-packet OUT bursts** to the FM-1's loaders
