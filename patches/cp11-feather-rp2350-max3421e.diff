@@ -1,0 +1,15 @@
+diff --git a/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk b/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk
+index 0816bebd09..5bcd81b998 100644
+--- a/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk
++++ b/ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk
+@@ -8,3 +8,10 @@ CHIP_PACKAGE = A
+ CHIP_FAMILY = rp2
+ 
+ EXTERNAL_FLASH_DEVICES = "GD25Q64C,W25Q64JVxQ"
++
++# Composite USB audio+MIDI devices (e.g. M-VAVE FM-1, 293 bytes) exceed the default.
++CFLAGS += -DCFG_TUH_ENUMERATION_BUFSIZE=512
++
++# FM-1: host through the MAX3421E USB Host FeatherWing; this board has no PIO host port.
++CIRCUITPY_MAX3421E = 1
++CIRCUITPY_USB_HOST = 0
