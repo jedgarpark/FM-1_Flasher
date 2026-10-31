@@ -55,6 +55,10 @@ this file has the story and the evidence. Dates are 2026.
   card over USB at the same time; `CIRCUITPY_SDCARD_USB = false` fixes them
   (package check 1.3 s), and `tools/deploy.py` sets it
   ([§6.18](#618-the-computer-was-reading-the-sd-card-too-circuitpy_sdcard_usb-oct-30)).
+  On a LiPo alone it installed DRIFT → FOMAJAM in 54 s, but the Feather
+  reset six times in the first minutes, probably the supply sagging when the
+  FM-1 attaches
+  ([§6.19](#619-on-a-lipo-alone-an-install-works-but-the-feather-resets-at-first-oct-30)).
 - **The touchscreen UI (Phase 4) installs firmware** on the TFT FeatherWing
   V2 3.5", over the PIO port with the 2 m cable. From the touchscreen:
   V15 → SLOOP, SLOOP → V15 with voices, V15 → MONK-1 and MONK-1 → V15, each
@@ -1261,6 +1265,52 @@ no resends; one run, not explained.
 - **The RP2040 builds expose the card the same way**, so the slow package
   checks there (§6.12) may have had the same cause; untested.
 
+### 6.19 On a LiPo alone: an install works, but the Feather resets at first (Oct 30)
+
+**Setup.** The RP2350 + wing + rewired TFT, the FM-1 on the short cable, on
+DRIFT. The regular firmware plus a console on TX (GPIO0): the two
+`CIRCUITPY_CONSOLE_UART` lines from the stats patch's `mpconfigboard.h`,
+nothing else. The Pico logged it (`device/uart_log_cdc.py`,
+`logs/rp2350-max-battery-20261030.log`). The UI was started on USB, then the
+Mac's USB unplugged. The LiPo's size and charge weren't recorded; the CHG
+LED was off on USB.
+
+**What happened.** Unplugging gave an instant white screen: backlight on,
+panel never set up, no NeoPixel. The wing's 5 V LED stayed green. The UART
+log showed **six hardware resets** (a fresh boot banner, no traceback),
+each 1–4 s after the UI came up, sometimes before it finished:
+
+| Time | Event |
+|---|---|
+| 17:15:24 | Boot on unplugging; UI up at :33 |
+| 17:15:36, 17:15:44 | Resets; after the second, a white screen until the reset button |
+| 17:18:30 | Reset button (NeoPixel: the usual yellow safe-mode window); UI up at :33 |
+| 17:18:33, 17:18:37 | Resets; UI up at :40 and stable |
+| 17:20:22 | One more reset, ~50 s after a Connect; the next Connect took 5.8 s to answer instead of 0.0 s |
+
+**Then an install on battery worked:** DRIFT (`FM-1_999`) → FOMAJAM
+(`FM-1_961`) in **54.1 s**: package check 1.3 s, loader by 7.8 s, write
+43.2 s, the new app found at 54.1 s. No reset during it, through the FM-1's
+two reboots, or at the UI's restart after it (338 KB free).
+
+**Likely cause, unconfirmed: the supply sags when the FM-1 attaches.** The
+backlight and the wing's 5 V boost run straight from the LiPo and stayed
+on; the Feather's 3.3 V side is what dropped out. On battery the LiPo feeds
+the Feather, the backlight and, through the wing's boost, the FM-1, which
+charges its own battery from VBUS while attached. The resets came just after
+the host started and the FM-1 attached, and stopped after a few minutes, as
+a charging current easing off would. Not yet ruled out: a weak or small
+LiPo. To confirm: start on battery with the FM-1 unplugged; measure BAT
+during a reset.
+
+**If it is the FM-1's load:** a larger or fresher LiPo; or switch the wing's
+5 V on only for the FM-1 (its `5V_EN` pad, or the solder jumper to the
+MAX3421E's GPOUT0).
+
+**Aside.** One soft reload after a Ctrl-C into the running UI reported
+207 KB free instead of 338 KB; a hard reset gave 338 KB again. Not seen
+after installs.
+
 ---
 
 ## 7. Tools and techniques worth reusing
@@ -1352,7 +1402,10 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
   unproven.
 - **What gets a host-role FM-1 back into device mode?** The Mac does it at
   once; a Feather reset only sometimes, and FM-1 power cycles not at all.
-- **Battery operation** of the whole flasher: untested.
+- **Why does the Feather reset on battery** in the first minutes (§6.19)?
+  Probably the LiPo sagging when the FM-1 attaches and charges from the
+  wing's 5 V. Next: start on battery with the FM-1 unplugged, and measure
+  BAT during a reset.
 - **Phase 4 hardware:** the MAX3421E wing (CS D10, IRQ D9) and the 3.5" TFT
   FeatherWing (TFT CS D9, DC D10) clash. Resolved on the RP2350 by rewiring
   the TFT's CS and DC to D11 and D4 (§6.16).
