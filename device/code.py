@@ -25,6 +25,7 @@ sd = D.mount_sd(spi)
 root = D.firmware_root(sd)
 state = D.DeviceState("/sd/flasher.json" if sd else "/flasher.json")
 pending = D.pending_install()
+display = D.display_redo(display, spi)  # after a power-on only
 
 if root is None:
     import displayio

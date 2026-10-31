@@ -54,8 +54,32 @@ def host_setup(spi):
         _host = max3421e.Max3421E(spi, chip_select=board.D10, irq=board.D9)
 
 
-def display_setup():
+# The TFT V2's panel reset comes from its own voltage supervisor, not the
+# Feather's reset. After a power-on (the EN switch), on battery, the panel
+# often came up white: the setup was sent, then the panel was reset again.
+# So on the first run after a power-on, wait before the setup and send it
+# again later (DEVNOTES §6.20).
+POWER_ON_WAIT_S = 2  # before the first setup
+POWER_ON_REDO_S = 3  # after it, before sending the setup again
+
+
+def _power_on():
+    return (microcontroller.cpu.reset_reason == microcontroller.ResetReason.POWER_ON
+            and supervisor.runtime.run_reason == supervisor.RunReason.STARTUP)
+
+
+def _display(spi):
     import adafruit_hx8357
+    if max3421e is not None:
+        dc, cs = board.D12, board.D11
+    else:
+        dc, cs = board.D10, board.D9
+    bus = fourwire.FourWire(spi, command=dc, chip_select=cs, baudrate=24_000_000)
+    return adafruit_hx8357.HX8357(bus, width=W, height=H, auto_refresh=False)
+
+
+def display_setup():
+    global _display_t
     displayio.release_displays()
     try:  # a card mounted by the last run, before a soft reload
         import storage
@@ -68,13 +92,24 @@ def display_setup():
     if not spi.try_lock():
         print("SPI was left locked; unlocking")
     spi.unlock()
-    if max3421e is not None:
-        dc, cs = board.D12, board.D11
-    else:
-        dc, cs = board.D10, board.D9
-    bus = fourwire.FourWire(spi, command=dc, chip_select=cs, baudrate=24_000_000)
-    display = adafruit_hx8357.HX8357(bus, width=W, height=H, auto_refresh=False)
-    return display, spi
+    if _power_on():
+        time.sleep(POWER_ON_WAIT_S)
+    _display_t = time.monotonic()
+    return _display(spi), spi
+
+
+_display_t = 0  # when display_setup() sent the panel its setup
+
+
+def display_redo(display, spi):
+    """After a power-on, send the panel its setup again, once POWER_ON_REDO_S
+    have passed since display_setup(). Call before the first screen is shown.
+    Returns the display to use from then on."""
+    if not _power_on():
+        return display
+    time.sleep(max(0, _display_t + POWER_ON_REDO_S - time.monotonic()))
+    displayio.release_displays()
+    return _display(spi)
 
 
 def mount_sd(spi):
