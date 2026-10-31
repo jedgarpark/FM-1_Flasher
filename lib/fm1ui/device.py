@@ -57,14 +57,15 @@ def host_setup(spi):
 # The TFT V2's panel reset comes from its own voltage supervisor, not the
 # Feather's reset. After a power-on (the EN switch), on battery, the panel
 # often came up white: the setup was sent, then the panel was reset again.
-# So on the first run after a power-on, send the setup again just before the
-# first screen. By then the App has loaded, about 2 s later, which has been
-# enough: no extra wait is needed (DEVNOTES §6.20).
+# Plugging into USB did the same, but reports a reset-pin start, not a
+# power-on. So on the first run after any start (not a reload), send the
+# setup again just before the first screen. By then the App has loaded,
+# about 2 s later, which has been enough: no extra wait is needed
+# (DEVNOTES §6.20).
 
 
-def _power_on():
-    return (microcontroller.cpu.reset_reason == microcontroller.ResetReason.POWER_ON
-            and supervisor.runtime.run_reason == supervisor.RunReason.STARTUP)
+def _started():
+    return supervisor.runtime.run_reason == supervisor.RunReason.STARTUP
 
 
 def _display(spi):
@@ -99,12 +100,12 @@ _display_t = 0  # when display_setup() sent the panel its setup
 
 
 def display_redo(display):
-    """After a power-on, send the panel its setup again over the display's
-    bus. Call just before the first screen: nothing drawn before it would
-    survive."""
-    if not _power_on():
+    """After a start (not a reload), send the panel its setup again over the
+    display's bus. Call just before the first screen: nothing drawn before it
+    would survive."""
+    if not _started():
         return
-    print("power-on: panel setup at %.1f s, again at %.1f s" % (_display_t, time.monotonic()))
+    print("start: panel setup at %.1f s, again at %.1f s" % (_display_t, time.monotonic()))
     from adafruit_hx8357 import _INIT_SEQUENCE as seq
     i = 0
     while i < len(seq):  # command, length (bit 7: a delay byte follows), data
