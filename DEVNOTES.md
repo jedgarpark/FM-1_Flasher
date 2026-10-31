@@ -1336,8 +1336,10 @@ only (`ResetReason.POWER_ON` and `RunReason.STARTUP`; reset-button starts
 and the install's reloads are unchanged): wait 2 s before the panel's first
 setup (`POWER_ON_WAIT_S`), then send the setup again 3 s after it
 (`POWER_ON_REDO_S`, `display_redo()` in `code.py` before the first screen).
-Switching on takes up to about 5 s longer. Untested on the board yet; a
-fresher LiPo is coming too.
+**Result:** 3 of 3 power-ons with EN on battery came up with the UI, no
+reset needed; about 10 s from switching on to the list (was ~5 s, when it
+showed). Reloads still start at once. A fresher LiPo is coming for the
+resets of §6.19.
 
 ---
 
