@@ -28,7 +28,7 @@ pending = D.pending_install()
 
 if root is None:
     import displayio
-    D.display_redo(display)  # after a power-on only
+    D.display_redo(display)  # after a start, not a reload
     g = displayio.Group()
     g.append(ui.rect(0, 0, 480, 320, ui.BG))
     g.append(ui.text(ui.NAME, "No firmware found", ui.FG, 240, 140, (0.5, 0.5)))
@@ -51,5 +51,5 @@ if pending:
             app.step()
 app = A.App(display, D.Touch(), root, state, D.Probe(), D.Installer())
 print("free RAM:", gc.mem_free())
-D.display_redo(display)  # after a power-on only
+D.display_redo(display)  # after a start, not a reload
 app.run()
