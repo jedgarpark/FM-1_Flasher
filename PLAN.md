@@ -50,7 +50,7 @@ Guiding idea: prove the protocol from a computer first, so USB-host problems and
 - **`hashlib`:** sha256 is available only as `hashlib.new("sha256")`, which `fm1proto` handles.
 - **TFT FeatherWing:** works next to the PIO port. Display, touch and full installs with the console on the screen (DEVNOTES §6.8).
 - **Not yet checked:**
-  - **Battery operation.** Partly checked on the RP2350 + wing (DEVNOTES §6.19): on a LiPo alone, DRIFT → FOMAJAM installed in 54 s, but the Feather reset six times in the first minutes, probably the supply sagging when the FM-1 attaches.
+  - **Battery operation.** Partly checked on the RP2350 + wing (DEVNOTES §6.19): on a LiPo alone, DRIFT → FOMAJAM installed in 54 s, and the Feather's resets in the first minutes of that session haven't been seen since the white-screen fix (§6.20).
 
 ## Phase 3: Install path on device (done)
 
@@ -97,9 +97,8 @@ Open items:
 
 - Battery-only operation (DEVNOTES §6.19):
   - [x] An install on a LiPo alone: DRIFT → FOMAJAM in 54 s, no reset during it.
-  - [ ] Find why the Feather resets in the first minutes on battery: with a fresher LiPo, measure BAT during a reset, note the LiPo's size and charge.
+  - [x] ~~Find why the Feather resets in the first minutes on battery~~: not seen again after the white-screen fix and the return to the regular firmware; closed without a cause.
   - [x] Fix the white screen after switching on with EN (DEVNOTES §6.20): after any start (not a reload), send the panel its setup again before the first screen. 9 of 9 power-ons on battery came up, with no added start time; plugging into USB, which reports a reset-pin start, needed it too (3 of 3 after the fix).
-  - [ ] If it's the FM-1's load: a bigger LiPo, or switch the wing's 5 V on only when the FM-1 is needed (`5V_EN`, or the jumper to the MAX3421E's GPOUT0).
 - Low-battery warning, and longer soak tests across more catalogue firmwares.
 - Then a Fruit Jam port.
 
