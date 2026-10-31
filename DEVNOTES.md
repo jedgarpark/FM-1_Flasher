@@ -1311,6 +1311,42 @@ MAX3421E's GPOUT0).
 207 KB free instead of 338 KB; a hard reset gave 338 KB again. Not seen
 after installs.
 
+### 6.20 A white screen after switching on with EN (Oct 30)
+
+**Pattern.** On battery, switching the Feather on with the TFT FeatherWing's
+ENABLE switch gave a white screen every time. Waiting a couple of seconds
+and pressing reset usually brought the UI up. **The same with the FM-1
+unplugged**, so it isn't the FM-1's load (§6.19 suspected that for the
+resets). The UART log showed each power-on as a clean boot that reached the
+UI (`free RAM: 338416`): the code ran; the panel didn't show it.
+
+**The panel's reset isn't the Feather's.** In the TFT V2's board file
+(Adafruit-3.5in-Capacitive-Touch-TFT-FeatherWing-PCB), the HX8357's reset
+(`TFT_RST`) comes from its own voltage supervisor (IC1, APX80x), which holds
+the panel in reset while 3.3 V is below its threshold and releases it a
+moment later. The Feather's reset button doesn't reach it. A reset panel
+shows white until it gets its setup again. So the likely sequence: the setup
+is sent, then the panel is reset again as the supply settles at power-on,
+and the UI keeps drawing to a panel that's waiting for its setup. Pressing
+reset later sends the setup to a settled panel. (The ENABLE switch ties the
+Feather's EN to the backlight driver's enable, `LCD_LITE`.)
+
+**Mitigation** (`lib/fm1ui/device.py`), on the first run after a power-on
+only (`ResetReason.POWER_ON` and `RunReason.STARTUP`; reset-button starts
+and the install's reloads are unchanged): `display_redo()`, called in
+`code.py` just before the first screen, sends the panel its setup again. It
+replays `adafruit_hx8357._INIT_SEQUENCE` over `display.bus` (0.8 s, most of
+it the sequence's own delays) instead of rebuilding the display.
+
+**Tuning.** The first version waited 2 s before the first setup and resent
+it 3 s after: 3 of 3 power-ons came up, but about 10 s from switching on to
+the list. With the resend moved to after the App loads, both waits were cut
+to 0 (set from `settings.toml` for the test): **9 of 9 power-ons with EN on
+battery came up**, the first setup 1.5 s into `code.py` and the resend at
+3.3 s, every time. About 5 s from switching on to the list, as before the
+fix. The waits are gone from the code. Reloads still start at once. A
+fresher LiPo is coming for the resets of §6.19.
+
 ---
 
 ## 7. Tools and techniques worth reusing
@@ -1404,8 +1440,9 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
   once; a Feather reset only sometimes, and FM-1 power cycles not at all.
 - **Why does the Feather reset on battery** in the first minutes (§6.19)?
   Probably the LiPo sagging when the FM-1 attaches and charges from the
-  wing's 5 V. Next: start on battery with the FM-1 unplugged, and measure
-  BAT during a reset.
+  wing's 5 V. Next: measure BAT during a reset, with a fresher LiPo. (The
+  white screen after switching on with EN happens with the FM-1 unplugged
+  too, §6.20.)
 - **Phase 4 hardware:** the MAX3421E wing (CS D10, IRQ D9) and the 3.5" TFT
   FeatherWing (TFT CS D9, DC D10) clash. Resolved on the RP2350 by rewiring
   the TFT's CS and DC to D11 and D4 (§6.16).
