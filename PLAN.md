@@ -98,7 +98,7 @@ Open items:
 - Battery-only operation (DEVNOTES §6.19):
   - [x] An install on a LiPo alone: DRIFT → FOMAJAM in 54 s, no reset during it.
   - [ ] Find why the Feather resets in the first minutes on battery: with a fresher LiPo, measure BAT during a reset, note the LiPo's size and charge.
-  - [x] Fix the white screen after switching on with EN (DEVNOTES §6.20): wait before the panel's setup and send it again after a power-on. 3 of 3 power-ons on battery came up.
+  - [x] Fix the white screen after switching on with EN (DEVNOTES §6.20): after a power-on, send the panel its setup again before the first screen. 9 of 9 power-ons on battery came up, with no added start time.
   - [ ] If it's the FM-1's load: a bigger LiPo, or switch the wing's 5 V on only when the FM-1 is needed (`5V_EN`, or the jumper to the MAX3421E's GPOUT0).
 - Low-battery warning, and longer soak tests across more catalogue firmwares.
 - Then a Fruit Jam port.

@@ -25,10 +25,10 @@ sd = D.mount_sd(spi)
 root = D.firmware_root(sd)
 state = D.DeviceState("/sd/flasher.json" if sd else "/flasher.json")
 pending = D.pending_install()
-display = D.display_redo(display, spi)  # after a power-on only
 
 if root is None:
     import displayio
+    D.display_redo(display)  # after a power-on only
     g = displayio.Group()
     g.append(ui.rect(0, 0, 480, 320, ui.BG))
     g.append(ui.text(ui.NAME, "No firmware found", ui.FG, 240, 140, (0.5, 0.5)))
@@ -51,4 +51,5 @@ if pending:
             app.step()
 app = A.App(display, D.Touch(), root, state, D.Probe(), D.Installer())
 print("free RAM:", gc.mem_free())
+D.display_redo(display)  # after a power-on only
 app.run()

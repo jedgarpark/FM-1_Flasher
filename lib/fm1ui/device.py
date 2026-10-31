@@ -57,10 +57,9 @@ def host_setup(spi):
 # The TFT V2's panel reset comes from its own voltage supervisor, not the
 # Feather's reset. After a power-on (the EN switch), on battery, the panel
 # often came up white: the setup was sent, then the panel was reset again.
-# So on the first run after a power-on, wait before the setup and send it
-# again later (DEVNOTES §6.20).
-POWER_ON_WAIT_S = 2  # before the first setup
-POWER_ON_REDO_S = 3  # after it, before sending the setup again
+# So on the first run after a power-on, send the setup again just before the
+# first screen. By then the App has loaded, about 2 s later, which has been
+# enough: no extra wait is needed (DEVNOTES §6.20).
 
 
 def _power_on():
@@ -92,8 +91,6 @@ def display_setup():
     if not spi.try_lock():
         print("SPI was left locked; unlocking")
     spi.unlock()
-    if _power_on():
-        time.sleep(POWER_ON_WAIT_S)
     _display_t = time.monotonic()
     return _display(spi), spi
 
@@ -101,15 +98,22 @@ def display_setup():
 _display_t = 0  # when display_setup() sent the panel its setup
 
 
-def display_redo(display, spi):
-    """After a power-on, send the panel its setup again, once POWER_ON_REDO_S
-    have passed since display_setup(). Call before the first screen is shown.
-    Returns the display to use from then on."""
+def display_redo(display):
+    """After a power-on, send the panel its setup again over the display's
+    bus. Call just before the first screen: nothing drawn before it would
+    survive."""
     if not _power_on():
-        return display
-    time.sleep(max(0, _display_t + POWER_ON_REDO_S - time.monotonic()))
-    displayio.release_displays()
-    return _display(spi)
+        return
+    print("power-on: panel setup at %.1f s, again at %.1f s" % (_display_t, time.monotonic()))
+    from adafruit_hx8357 import _INIT_SEQUENCE as seq
+    i = 0
+    while i < len(seq):  # command, length (bit 7: a delay byte follows), data
+        n = seq[i + 1] & 0x7F
+        display.bus.send(seq[i], seq[i + 2:i + 2 + n])
+        i += 2 + n
+        if seq[i - 1 - n] & 0x80:
+            time.sleep((500 if seq[i] == 255 else seq[i]) / 1000)
+            i += 1
 
 
 def mount_sd(spi):

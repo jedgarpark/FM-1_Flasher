@@ -1333,13 +1333,19 @@ Feather's EN to the backlight driver's enable, `LCD_LITE`.)
 
 **Mitigation** (`lib/fm1ui/device.py`), on the first run after a power-on
 only (`ResetReason.POWER_ON` and `RunReason.STARTUP`; reset-button starts
-and the install's reloads are unchanged): wait 2 s before the panel's first
-setup (`POWER_ON_WAIT_S`), then send the setup again 3 s after it
-(`POWER_ON_REDO_S`, `display_redo()` in `code.py` before the first screen).
-**Result:** 3 of 3 power-ons with EN on battery came up with the UI, no
-reset needed; about 10 s from switching on to the list (was ~5 s, when it
-showed). Reloads still start at once. A fresher LiPo is coming for the
-resets of §6.19.
+and the install's reloads are unchanged): `display_redo()`, called in
+`code.py` just before the first screen, sends the panel its setup again. It
+replays `adafruit_hx8357._INIT_SEQUENCE` over `display.bus` (0.8 s, most of
+it the sequence's own delays) instead of rebuilding the display.
+
+**Tuning.** The first version waited 2 s before the first setup and resent
+it 3 s after: 3 of 3 power-ons came up, but about 10 s from switching on to
+the list. With the resend moved to after the App loads, both waits were cut
+to 0 (set from `settings.toml` for the test): **9 of 9 power-ons with EN on
+battery came up**, the first setup 1.5 s into `code.py` and the resend at
+3.3 s, every time. About 5 s from switching on to the list, as before the
+fix. The waits are gone from the code. Reloads still start at once. A
+fresher LiPo is coming for the resets of §6.19.
 
 ---
 
