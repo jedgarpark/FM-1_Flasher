@@ -1307,6 +1307,12 @@ during a reset.
 5 V on only for the FM-1 (its `5V_EN` pad, or the solder jumper to the
 MAX3421E's GPOUT0).
 
+**Not seen again (closed, Oct 30).** After the white-screen fix (§6.20)
+and the switch back to the regular firmware, no resets on battery: 9 of 9
+EN power-ons, then 3 of 3 more, all reached the UI and stayed up. What
+caused the six resets wasn't found. If they come back, start with BAT during
+a reset and the LiPo's size and charge.
+
 **Aside.** One soft reload after a Ctrl-C into the running UI reported
 207 KB free instead of 338 KB; a hard reset gave 338 KB again. Not seen
 after installs.
@@ -1344,8 +1350,7 @@ the list. With the resend moved to after the App loads, both waits were cut
 to 0 (set from `settings.toml` for the test): **9 of 9 power-ons with EN on
 battery came up**, the first setup 1.5 s into `code.py` and the resend at
 3.3 s, every time. About 5 s from switching on to the list, as before the
-fix. The waits are gone from the code. Reloads still start at once. A
-fresher LiPo is coming for the resets of §6.19.
+fix. The waits are gone from the code. Reloads still start at once.
 
 **Plugging into USB, too.** With the mitigation limited to power-ons,
 plugging the Feather into the Mac gave the same white screen. That start
@@ -1445,11 +1450,6 @@ These appeared in `PLAN.md` or in our reasoning at the time, and are wrong:
   unproven.
 - **What gets a host-role FM-1 back into device mode?** The Mac does it at
   once; a Feather reset only sometimes, and FM-1 power cycles not at all.
-- **Why does the Feather reset on battery** in the first minutes (§6.19)?
-  Probably the LiPo sagging when the FM-1 attaches and charges from the
-  wing's 5 V. Next: measure BAT during a reset, with a fresher LiPo. (The
-  white screen after switching on with EN happens with the FM-1 unplugged
-  too, §6.20.)
 - **Phase 4 hardware:** the MAX3421E wing (CS D10, IRQ D9) and the 3.5" TFT
   FeatherWing (TFT CS D9, DC D10) clash. Resolved on the RP2350 by rewiring
   the TFT's CS and DC to D11 and D4 (§6.16).
