@@ -1331,9 +1331,9 @@ and the UI keeps drawing to a panel that's waiting for its setup. Pressing
 reset later sends the setup to a settled panel. (The ENABLE switch ties the
 Feather's EN to the backlight driver's enable, `LCD_LITE`.)
 
-**Mitigation** (`lib/fm1ui/device.py`), on the first run after a power-on
-only (`ResetReason.POWER_ON` and `RunReason.STARTUP`; reset-button starts
-and the install's reloads are unchanged): `display_redo()`, called in
+**Mitigation** (`lib/fm1ui/device.py`), on the first run after any start
+(`RunReason.STARTUP`; the install's reloads and auto-reloads are
+unchanged): `display_redo()`, called in
 `code.py` just before the first screen, sends the panel its setup again. It
 replays `adafruit_hx8357._INIT_SEQUENCE` over `display.bus` (0.8 s, most of
 it the sequence's own delays) instead of rebuilding the display.
@@ -1346,6 +1346,13 @@ battery came up**, the first setup 1.5 s into `code.py` and the resend at
 3.3 s, every time. About 5 s from switching on to the list, as before the
 fix. The waits are gone from the code. Reloads still start at once. A
 fresher LiPo is coming for the resets of §6.19.
+
+**Plugging into USB, too.** With the mitigation limited to power-ons,
+plugging the Feather into the Mac gave the same white screen. That start
+reports `ResetReason.RESET_PIN`, not `POWER_ON`, so the resend was
+skipped. Now it runs on every `RunReason.STARTUP` and skips only reloads.
+3 of 3 USB plug-ins and 3 of 3 EN power-ons on battery came up. A
+reset-button start pays the 0.8 s resend too, which is harmless.
 
 ---
 

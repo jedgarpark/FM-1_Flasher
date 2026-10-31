@@ -59,8 +59,9 @@ def host_setup(spi):
 # often came up white: the setup was sent, then the panel was reset again.
 # Plugging into USB did the same, but reports a reset-pin start, not a
 # power-on. So on the first run after any start (not a reload), send the
-# setup again just before the first screen. By then the App has loaded, about 2 s later, which has been
-# enough: no extra wait is needed (DEVNOTES §6.20).
+# setup again just before the first screen. By then the App has loaded,
+# about 2 s later, which has been enough: no extra wait is needed
+# (DEVNOTES §6.20).
 
 
 def _started():
@@ -99,9 +100,9 @@ _display_t = 0  # when display_setup() sent the panel its setup
 
 
 def display_redo(display):
-    """After a start (not a reload), send the panel its setup again over the display's
-    bus. Call just before the first screen: nothing drawn before it would
-    survive."""
+    """After a start (not a reload), send the panel its setup again over the
+    display's bus. Call just before the first screen: nothing drawn before it
+    would survive."""
     if not _started():
         return
     print("start: panel setup at %.1f s, again at %.1f s" % (_display_t, time.monotonic()))
