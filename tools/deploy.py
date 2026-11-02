@@ -4,7 +4,7 @@
 
   .venv/bin/python tools/deploy.py --mpy-cross ref/circuitpython/mpy-cross/build/mpy-cross
 
-Copies code.py, fonts/ (.fmf), the splash (art/fff_splash.png as a 16-colour
+Copies code.py, fonts/ (.fmf), the splash (art/splash_text.png as a 16-colour
 splash.bmp, needs Pillow), lib/fm1ui and the fm1 libraries, compiles
 the board's adafruit_hx8357/ft5336/register .py files in place, and sets
 CIRCUITPY_SDCARD_USB = false in settings.toml (takes effect after a reset). The
@@ -29,7 +29,7 @@ BOARD_PY = ("adafruit_hx8357.py", "adafruit_ft5336.py", "adafruit_register/i2c_b
 # Keeps the computer from reading /sd over USB while the flasher uses it: the two
 # collide on the SPI bus and FatFs gets stale sectors (DEVNOTES §6.18).
 SETTINGS = {"CIRCUITPY_SDCARD_USB": "false"}
-SPLASH = ("art/fff_splash.png", "splash.bmp")  # 480x320; fm1ui.device.SPLASH
+SPLASH = ("art/splash_text.png", "splash.bmp")  # 480x320 (tools/make_splash.py); fm1ui.device.SPLASH
 
 
 def write_splash(drive):

@@ -98,7 +98,7 @@ def display_setup():
 
 _display_t = 0  # when display_setup() sent the panel its setup
 
-SPLASH = "/splash.bmp"  # from art/fff_splash.png (tools/deploy.py)
+SPLASH = "/splash.bmp"  # from art/splash_text.png (tools/deploy.py)
 SPLASH_HOLD = 2.0  # seconds the splash stays up after display_redo()
 _splash_bmp = None
 
