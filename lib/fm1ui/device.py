@@ -98,6 +98,25 @@ def display_setup():
 
 _display_t = 0  # when display_setup() sent the panel its setup
 
+SPLASH = "/splash.bmp"  # from art/fff_splash.png (tools/deploy.py)
+
+
+def splash(display):
+    """After a start (not a reload), show the splash until the first screen.
+    Reloads keep the console's note (fm1ui.console) instead. display_redo()
+    clears the panel, so on a start where the panel came up white, the
+    splash doesn't show."""
+    if not _started():
+        return
+    try:
+        bmp = displayio.OnDiskBitmap(SPLASH)  # read from flash, not the SD's bus
+    except OSError:
+        return
+    g = displayio.Group()
+    g.append(displayio.TileGrid(bmp, pixel_shader=bmp.pixel_shader))
+    display.root_group = g
+    display.refresh()
+
 
 def display_redo(display):
     """After a start (not a reload), send the panel its setup again over the

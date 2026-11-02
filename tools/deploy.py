@@ -4,7 +4,8 @@
 
   .venv/bin/python tools/deploy.py --mpy-cross ref/circuitpython/mpy-cross/build/mpy-cross
 
-Copies code.py, fonts/ (.fmf), lib/fm1ui and the fm1 libraries, compiles
+Copies code.py, fonts/ (.fmf), the splash (art/fff_splash.png as a 16-colour
+splash.bmp, needs Pillow), lib/fm1ui and the fm1 libraries, compiles
 the board's adafruit_hx8357/ft5336/register .py files in place, and sets
 CIRCUITPY_SDCARD_USB = false in settings.toml (takes effect after a reset). The
 mpy-cross must match the board's CircuitPython version. A .py of the same
@@ -17,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from io import BytesIO
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FM1_LIBS = ("fm1proto.py", "fm1update.py", "fm1usb.py")
@@ -27,6 +29,28 @@ BOARD_PY = ("adafruit_hx8357.py", "adafruit_ft5336.py", "adafruit_register/i2c_b
 # Keeps the computer from reading /sd over USB while the flasher uses it: the two
 # collide on the SPI bus and FatFs gets stale sectors (DEVNOTES §6.18).
 SETTINGS = {"CIRCUITPY_SDCARD_USB": "false"}
+SPLASH = ("art/fff_splash.png", "splash.bmp")  # 480x320; fm1ui.device.SPLASH
+
+
+def write_splash(drive):
+    """Convert the splash PNG to an 8-bit BMP with 16 colours, which OnDiskBitmap
+    reads (154 KB; Pillow writes no 4-bit BMP). Written only when it changed,
+    so the board doesn't reload."""
+    from PIL import Image
+    im = Image.open(os.path.join(ROOT, SPLASH[0])).convert("RGB")
+    im = im.quantize(16, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    buf = BytesIO()
+    im.save(buf, "BMP")
+    data = buf.getvalue()
+    dst = os.path.join(drive, SPLASH[1])
+    try:
+        with open(dst, "rb") as f:
+            if f.read() == data:
+                return
+    except OSError:
+        pass
+    with open(dst, "wb") as f:
+        f.write(data)
 
 
 def update_settings(drive):
@@ -112,10 +136,11 @@ def main():
         dst = os.path.join(fonts, os.path.basename(f))
         if not (os.path.exists(dst) and open(dst, "rb").read() == open(f, "rb").read()):
             shutil.copy(f, fonts)
+    write_splash(args.drive)
     update_settings(args.drive)
     shutil.copy(os.path.join(ROOT, "device", "code.py"), os.path.join(args.drive, "code.py"))
     os.sync()
-    print("deployed %d modules, fonts, settings.toml and code.py to %s" % (n, args.drive))
+    print("deployed %d modules, fonts, the splash, settings.toml and code.py to %s" % (n, args.drive))
 
 
 if __name__ == "__main__":
