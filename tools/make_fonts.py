@@ -46,11 +46,33 @@ EXTRA = ("ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâã
          "–—‘’“”•…·°×©®™←→")
 
 
-def _draw(font, ch, size, baseline):
-    img = Image.new("1", (size * 4, baseline + size * 2))
+_LEAD = "H "  # a capital, then an em space so it can't touch the glyph
+
+
+def _render(font, s, w, h, x, baseline):
+    img = Image.new("1", (w, h))
     d = ImageDraw.Draw(img)
     d.fontmode = "1"
-    d.text((size, baseline), ch, font=font, fill=1, anchor="ls")
+    d.text((x, baseline), s, font=font, fill=1, anchor="ls")
+    return img
+
+
+def _draw(font, ch, size, baseline):
+    """The glyph alone, at its height in running text. Drawn by itself, Pillow
+    puts a few glyphs a pixel high (Inter Bold's r, < and >), so its rows come
+    from a render after _LEAD, where it sits on the same baseline as text."""
+    h = baseline + size * 2
+    img = _render(font, ch, size * 4, h, size, baseline)
+    box = img.getbbox()
+    if box is None:
+        return img
+    lead = _render(font, _LEAD, size * 8, h, size, baseline).getbbox()[2] + 1
+    ctx = _render(font, _LEAD + ch, size * 8, h, size, baseline).crop((lead, 0, size * 8, h)).getbbox()
+    dy = ctx[1] - box[1] if ctx else 0
+    if dy:
+        moved = Image.new("1", img.size)
+        moved.paste(img, (0, dy))
+        img = moved
     return img
 
 
