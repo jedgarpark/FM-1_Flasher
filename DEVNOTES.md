@@ -1359,6 +1359,43 @@ skipped. Now it runs on every `RunReason.STARTUP` and skips only reloads.
 3 of 3 USB plug-ins and 3 of 3 EN power-ons on battery came up. A
 reset-button start pays the 0.8 s resend too, which is harmless.
 
+### 6.21 The Learn Guide's firmware: a custom build from upstream `main` (Nov 2)
+
+**Why custom.** Stock CircuitPython for the Feather RP2350 has the PIO USB
+host on and the MAX3421E off; the two can't be built together (duplicate
+`hcd_*` symbols). Upstream (#11697) prefers a custom build for now and, long
+term, one build that supports either driver. A custom UF2 is frozen: nothing
+rebuilds it.
+
+**What it is.** Upstream `main` at `bf9a1fc492` (after 11.0.0-alpha.2; it
+includes the shared-SPI-bus fix, #11695, which no release has yet) plus
+three lines in `ports/raspberrypi/boards/adafruit_feather_rp2350/mpconfigboard.mk`:
+
+```
+CIRCUITPY_MAX3421E = 1
+CIRCUITPY_USB_HOST = 0
+CFLAGS += -DCFG_TUH_ENUMERATION_BUFSIZE=512
+```
+
+Built locally (`make BOARD=adafruit_feather_rp2350`), on the local branch
+`fm1-feather-rp2350-max3421e` (commit `4de5615a2b`). It reports
+`11.0.0-alpha.2-62-g4de5615a2b`. UF2 sha256 `30a848ab059873ac131e659f8c6ef56829fe978f2820a452efdf988ba8f7895e`.
+The map has the MAX3421E driver and no PIO host. 231 KB of flash free.
+
+The `build-board-custom` workflow can't make this build from flags alone:
+they go to `make` as variables, and the buffer size is a `CFLAGS` define.
+Without the 512 buffer the FM-1 (293-byte configuration descriptor) never
+mounts, with no error.
+
+**Tests on the bench** (RP2350 + wing + rewired TFT, FM-1 on the short
+cable): 337 KB free after a hard reset, as on the old build; the panel resend
+of §6.20 runs; the FM-1 connects. Installs: DUB-1 5 of 5; V15 4 of 5, with
+the voices restored each time it passed. The one failure was the first V15
+install, unlogged: the touchscreen said "Install failed", yet V15 had
+installed, so it most likely failed at V15's restart or the voice restore
+(§6.7). The logger wasn't the difference: three of the passes ran without
+it. Not explained.
+
 ---
 
 ## 7. Tools and techniques worth reusing
