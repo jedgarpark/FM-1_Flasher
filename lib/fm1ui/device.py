@@ -99,23 +99,32 @@ def display_setup():
 _display_t = 0  # when display_setup() sent the panel its setup
 
 SPLASH = "/splash.bmp"  # from art/fff_splash.png (tools/deploy.py)
+SPLASH_HOLD = 2.0  # seconds the splash stays up after display_redo()
+_splash_bmp = None
+
+
+def _show_splash(display):
+    # A new Group each time: assigning the current root_group again is a
+    # no-op, so it wouldn't redraw the panel that display_redo() wiped.
+    g = displayio.Group()
+    g.append(displayio.TileGrid(_splash_bmp, pixel_shader=_splash_bmp.pixel_shader))
+    display.root_group = g
+    display.refresh()
 
 
 def splash(display):
     """After a start (not a reload), show the splash until the first screen.
     Reloads keep the console's note (fm1ui.console) instead. display_redo()
-    clears the panel, so on a start where the panel came up white, the
-    splash doesn't show."""
+    wipes the panel, then draws the splash again and holds it SPLASH_HOLD s,
+    so it shows even on a start where the panel came up white."""
+    global _splash_bmp
     if not _started():
         return
     try:
-        bmp = displayio.OnDiskBitmap(SPLASH)  # read from flash, not the SD's bus
+        _splash_bmp = displayio.OnDiskBitmap(SPLASH)  # from flash, not the SD's bus
     except OSError:
         return
-    g = displayio.Group()
-    g.append(displayio.TileGrid(bmp, pixel_shader=bmp.pixel_shader))
-    display.root_group = g
-    display.refresh()
+    _show_splash(display)
 
 
 def display_redo(display):
@@ -134,6 +143,13 @@ def display_redo(display):
         if seq[i - 1 - n] & 0x80:
             time.sleep((500 if seq[i] == 255 else seq[i]) / 1000)
             i += 1
+    global _splash_bmp
+    if _splash_bmp is not None:
+        prev = display.root_group  # the caller's first screen, if already set
+        _show_splash(display)
+        time.sleep(SPLASH_HOLD)
+        display.root_group = prev
+        _splash_bmp = None
 
 
 def mount_sd(spi):
