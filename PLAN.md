@@ -97,7 +97,7 @@ Open items:
 - [x] Build the Learn Guide's firmware: upstream `main` plus three board lines, built locally (DEVNOTES §6.21).
 - [ ] Give the UF2 a permanent home (for example a release of this repo) and link it from the guide. Rebuild it the same way when a CircuitPython release includes #11695.
 - [ ] Write the UI's install log to the SD card as well, so a failure without a computer attached leaves a record (one V15 install in five failed unlogged, §6.21).
-- [ ] A splash screen at start-up.
+- [x] A splash screen at start-up: "FM-1 FIRMWARE FLASHER", purple on black, from `tools/make_splash.py`; shown after a start (not a reload) and held 2 s after the panel's second setup.
 - [ ] The lower-case "r" in the UI font looks strange and sits above the baseline compared with the other letters.
 
 ## Phase 5: Hardening, then extras
