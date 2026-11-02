@@ -92,6 +92,13 @@ Open items:
 - [x] Send the shared-SPI-bus fix upstream as a PR: [adafruit/circuitpython#11695](https://github.com/adafruit/circuitpython/pull/11695), merged Oct 30 after mikeysklar's tests (with real SD reads: stuck 10/10 before, 0/10 after). Issue #11692 is closed.
 - [x] Ask upstream whether the Feather RP2350 build could enable the MAX3421E and the 512-byte enumeration buffer, so a stock CircuitPython works with the wing: [adafruit/circuitpython#11697](https://github.com/adafruit/circuitpython/issues/11697). The MAX3421E and the PIO host can't be built together (duplicate `hcd_*` symbols), so it would cost the board `usb_host.Port`.
 - [ ] Optionally report `sdcardio_sdcard_readblocks()` ignoring a lock timeout as its own issue (FatFs gets stale sectors; DEVNOTES §6.18).
+- [ ] Follow #11697 for a stock-firmware path. Long term, tannewt wants one build that supports either host driver ([comment](https://github.com/adafruit/circuitpython/issues/11697#issuecomment-6584031005)); he asked hathach about several host interfaces in TinyUSB and mikeysklar about Zephyr. A custom build is frozen: nothing rebuilds it ([comment](https://github.com/adafruit/circuitpython/issues/11697#issuecomment-6581766327)). Until then the Learn Guide uses the custom UF2 (DEVNOTES §6.21).
+- [ ] Offer upstream a PR raising the default `CFG_TUH_ENUMERATION_BUFSIZE` from 288 to 512 (mikeysklar's suggestion; 224 more bytes of RAM). Without it, even the `build-board-custom` workflow can't make a working build: its flags can't set the buffer.
+- [x] Build the Learn Guide's firmware: upstream `main` plus three board lines, built locally (DEVNOTES §6.21).
+- [ ] Give the UF2 a permanent home (for example a release of this repo) and link it from the guide. Rebuild it the same way when a CircuitPython release includes #11695.
+- [ ] Write the UI's install log to the SD card as well, so a failure without a computer attached leaves a record (one V15 install in five failed unlogged, §6.21).
+- [ ] A splash screen at start-up.
+- [ ] The lower-case "r" in the UI font looks strange and sits above the baseline compared with the other letters.
 
 ## Phase 5: Hardening, then extras
 
