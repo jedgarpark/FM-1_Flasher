@@ -1,4 +1,4 @@
-# Draft: TinyUSB issue (hathach/tinyusb), not posted
+# TinyUSB issue: posted as hathach/tinyusb#4405 (Nov 2, 2026)
 
 **Title:** dwc2 host (DMA): aborting a running bulk IN doesn't stop it; it later completes with the next data
 
@@ -76,4 +76,4 @@ Environment: TinyUSB at efab607b8 (as pinned by CircuitPython main, Nov 2 2026);
 
 **Title:** Metro ESP32-P4: `usb.core` read timeout leaves the transfer running (TinyUSB dwc2 host abort)
 
-On the Metro ESP32-P4, after a `usb.core` `read()` times out on a bulk IN endpoint, the next transfers on the device report wrong results and reads stop completing until a replug. The cause is in TinyUSB's dwc2 host abort: hathach/tinyusb#NNNN. Note that `_handle_timed_transfer_callback()` frees the bounce buffer after `tuh_edpt_abort_xfer()` returns true, which with this bug can leave DMA writing into freed memory.
+On the Metro ESP32-P4, after a `usb.core` `read()` times out on a bulk IN endpoint, the next transfers on the device report wrong results and reads stop completing until a replug. The cause is in TinyUSB's dwc2 host abort: hathach/tinyusb#4405. Note that `_handle_timed_transfer_callback()` frees the bounce buffer after `tuh_edpt_abort_xfer()` returns true, which with this bug can leave DMA writing into freed memory.
