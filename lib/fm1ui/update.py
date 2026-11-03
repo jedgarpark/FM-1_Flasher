@@ -165,8 +165,17 @@ class UpdateScreen:
         cx, cy, cw, ch = L.CANCEL_BTN
         gx, gy, gw, gh = L.GO_BTN
         by2 = L.OK_BTN[1]
-        self.left = ui.Button("Back", cx, by2, cw, ch)
-        self.right = ui.Button("Update", gx, by2, gw, gh, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
+        self.mid = None
+        if self.mode == "plan" and self.plan.downloads:  # Back | Details | Update
+            gap = 8
+            w = (gx + gw - cx - 2 * gap) // 3
+            self.left = ui.Button("Back", cx, by2, w, ch)
+            self.mid = ui.Button("Details", cx + w + gap, by2, w, ch)
+            self.right = ui.Button("Update", gx + gw - w, by2, w, gh, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
+            g.append(self.mid.group)
+        else:
+            self.left = ui.Button("Back", cx, by2, cw, ch)
+            self.right = ui.Button("Update", gx, by2, gw, gh, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
         g.append(self.left.group)
         g.append(self.right.group)
         self.group = g
@@ -270,16 +279,23 @@ class UpdateScreen:
             self._lines(((ui.BODY, self.message, ui.WARN),))
             self._buttons("Back", "Try again")
 
+    def _mid_shown(self):
+        return self.mid is not None and self.mode == "plan"
+
     def target(self, x, y):
+        if self._mid_shown() and self.mid.hit(x, y, 4):
+            return self.mid.group
         for b in (self.left, self.right):
-            if not b.group.hidden and b.hit(x, y):
+            if not b.group.hidden and b.hit(x, y, 4 if self.mid else 10):
                 return b.group
         return None
 
     def tap(self, x, y):
-        if not self.left.group.hidden and self.left.hit(x, y):
+        if self._mid_shown() and self.mid.hit(x, y, 4):
+            self.app.push(PlanScreen(self.app, self.plan))
+        elif not self.left.group.hidden and self.left.hit(x, y, 4 if self.mid else 10):
             self.app.pop()
-        elif not self.right.group.hidden and self.right.hit(x, y):
+        elif not self.right.group.hidden and self.right.hit(x, y, 4 if self.mid else 10):
             if self.mode == "plan":
                 self.start_run()
             elif self.mode == "run":
@@ -328,10 +344,11 @@ class UpdateScreen:
                 err = "Couldn't read the hub's catalog (%s)." % (str(e) or repr(e))
         self.message = err or ""
         self.mode = "error" if err else "plan"
-        self._show()
-        app.refresh()
+        app.show()  # the plan has its own buttons (Details)
 
     def start_run(self):
+        if self.mid is not None:
+            self.mid.group.hidden = True
         self.mode = "run"
         self.stats = {"new": 0, "updated": 0, "pictures": 0, "failed": [], "index": False}
         self.work = job(self.app.root, self.plan, self.app.updater, self.stats)
@@ -388,3 +405,89 @@ class UpdateScreen:
         self.info.set("Took %d:%02d" % (s // 60, s % 60))
         self._show()
         self.app.refresh()
+
+
+class PlanScreen:
+    """The plan's firmwares, from Details on the Update screen: the new ones
+    first, then the updated ones with the version on the card and the new one."""
+
+    ROW_H, PITCH, TOP = 28, 32, 40
+
+    def __init__(self, app, plan):
+        from fm1ui.settings import _Paged
+        self.app = app
+        self.group = None
+        self.page = 0
+        rows = []
+        name = lambda e: (e.get("name") or e["id"]).lower()  # noqa: E731
+        for e in sorted(plan.new, key=name):
+            rows.append((e.get("name") or e["id"], "new  " + str(e.get("version", "")), ui.OK))
+        for e in sorted(plan.changed, key=name):
+            old = (K.read_meta(app.root + "/" + e["id"]) or {}).get("version")
+            new = str(e.get("version", ""))
+            change = "%s, new build" % new if old == new else "%s > %s" % (old or "?", new)
+            rows.append((e.get("name") or e["id"], change, ui.DIM))
+        self.rows = rows
+        self.counts = (len(plan.new), len(plan.changed))
+        self._paged = _Paged  # its page arrows, borrowed
+
+    def release(self):
+        self.group = None
+
+    def per_page(self):
+        return max(1, (L.H - 36 - self.TOP) // self.PITCH)
+
+    def build(self):
+        from fm1ui.settings import _header
+        W = L.W
+        g = displayio.Group()
+        self.back = _header(g, "Details")
+        n_new, n_changed = self.counts
+        parts = ["%d new" % n_new] if n_new else []
+        if n_changed:
+            parts.append("%d updated" % n_changed)
+        parts = [", ".join(parts)]
+        self._paged.arrows(self, g, len(self.rows))
+        per = self.per_page()
+        for i, (label, change, color) in enumerate(C.page_slice(self.rows, self.page, per)):
+            y = self.TOP + i * self.PITCH
+            g.append(ui.outlined(6, y, W - 12, self.ROW_H, ui.PANEL, ui.LINE))
+            room = W - 12 - 24
+            change = C.ellipsize(change, lambda s: ui.width(ui.SMALL, s), room // 2)
+            cw = ui.width(ui.SMALL, change)
+            g.append(ui.text(ui.NAME, C.ellipsize(label, lambda s: ui.width(ui.NAME, s), room - cw - 10),
+                             ui.FG, 16, y + self.ROW_H // 2, (0, 0.5)))
+            g.append(ui.text(ui.SMALL, change, color, W - 16, y + self.ROW_H // 2, (1, 0.5)))
+        if self.pages > 1:
+            parts.append("%d/%d" % (self.page + 1, self.pages))
+        g.append(ui.text(ui.SMALL, "  ".join(parts), ui.FG, W // 2, L.H - 18, (0.5, 0.5)))
+        self.group = g
+        return g
+
+    def target(self, x, y):
+        if self.back.hit(x, y):
+            return self.back.group
+        a = self._paged.arrow_at(self, x, y)
+        if a:
+            return self.prev_g if a < 0 else self.next_g
+        return None
+
+    def tap(self, x, y):
+        if self.back.hit(x, y):
+            self.app.pop()
+        else:
+            a = self._paged.arrow_at(self, x, y)
+            if a:
+                self._paged.turn(self, a)
+
+    def swipe(self, dx):
+        if dx < 0:
+            self._paged.turn(self, 1)
+        elif dx > 0:
+            self._paged.turn(self, -1)
+
+    def tick(self, now):
+        pass
+
+    def fm1_changed(self):
+        pass
