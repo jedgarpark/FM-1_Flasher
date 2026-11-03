@@ -139,13 +139,13 @@ class ListScreen(Screen):
         self.tab_tag = ui.Button(tag_label(self.tag), *L.TAG_BTN, edge=tag_color,
                                  color=tag_color if self.tag else ui.FG)
         g.append(self.tab_tag.group)
-        self.tab_fav = L.FAV_TAB
         fx, fy = L.FAV_TAB[0], L.FAV_TAB[1]
         on = self.favorites_only
         self.tab_fav_g = ui.outlined(*L.FAV_TAB, ui.PANEL if on else ui.BG, ui.CYAN if on else ui.LINE)
         g.append(self.tab_fav_g)
-        g.append(ui.heart_tile(True, fx + 10, fy + 7))
-        g.append(ui.text(ui.SMALL, "%d" % len(app.state.favorites), ui.FG if on else ui.DIM, fx + 30, fy + 13, (0, 0.5)))
+        g.append(ui.heart_tile(True, fx + (L.FAV_TAB[2] - 13) // 2, fy + 7))
+        self.tab_sort = ui.Button(C.SORT_LABELS.get(app.state.sort, "A-Z"), *L.SORT_BTN)
+        g.append(self.tab_sort.group)
         self.fm1_at = len(g)
         g.append(self.fm1_header())
 
@@ -185,9 +185,6 @@ class ListScreen(Screen):
         g.append(self.view_g)
         # The footer's buttons, left to right, as (rect, name, group or None).
         self.footer = [(self.prev, "prev", self.arrows[0]), (L.VIEW, "view", self.view_g)]
-        sort = ui.Button(C.SORT_LABELS.get(app.state.sort, "A-Z"), *L.SORT_BTN, name=ui.SMALL)
-        g.append(sort.group)
-        self.footer.append((L.SORT_BTN, "sort", sort.group))
         if app.updater is not None and L.SETTINGS_BTN:
             sx, sy, sw, sh = L.SETTINGS_BTN
             gear = ui.outlined(sx, sy, sw, sh, ui.PANEL, ui.LINE)
@@ -221,7 +218,7 @@ class ListScreen(Screen):
         self.connect_btn = None
         right, y = L.FM1_RIGHT, L.HEADER_Y
         if app.identity:
-            room = right - (L.FAV_TAB[0] + L.FAV_TAB[2]) - 20  # the dot and a gap after the tabs
+            room = right - (L.SORT_BTN[0] + L.SORT_BTN[2]) - 20  # the dot and a gap after the tabs
             status = C.ellipsize(fm1_status(app), lambda s: ui.width(ui.SMALL, s), room)
             g.append(ui.text(ui.SMALL, status, ui.FG, right, y, (1, 0.5)))
             g.append(ui.rect(right - ui.width(ui.SMALL, status) - 14, y - 4, 8, 8, ui.OK))
@@ -298,7 +295,7 @@ class ListScreen(Screen):
             self.app.show()
 
     def next_sort(self):
-        """A-Z -> New -> Recent -> A-Z, from the first page."""
+        """A-Z -> New -> RcntUp -> A-Z, from the first page."""
         st = self.app.state
         st.sort = C.next_sort(st.sort)
         st.save()
@@ -311,10 +308,14 @@ class ListScreen(Screen):
             self.page = page
             self.app.show()
 
-    def _fav_side(self, x):
-        # The tabs take the header's full height (taps there land high)
-        # and split at the gap between them.
-        return x >= (self.tab_tag.rect[0] + self.tab_tag.rect[2] + self.tab_fav[0]) // 2
+    def _tab_at(self, x):
+        """"tag", "fav" or "sort": the tabs take the header's full height
+        (taps there land high) and split at the gaps between them."""
+        if x < (L.TAG_BTN[0] + L.TAG_BTN[2] + L.FAV_TAB[0]) // 2:
+            return "tag"
+        if x < (L.FAV_TAB[0] + L.FAV_TAB[2] + L.SORT_BTN[0]) // 2:
+            return "fav"
+        return "sort"
 
     def _footer_at(self, x):
         """The footer button nearest x, within FOOTER_SLACK: a fingertip
@@ -329,7 +330,7 @@ class ListScreen(Screen):
         return best
 
     def _zone(self, x, y):
-        """"connect", "tabs", a footer button's name ("prev", "view", "sort",
+        """"connect", "tabs", a footer button's name ("prev", "view",
         "settings", "update", "next") or None."""
         if y < L.GRID_Y - 2:
             if x >= L.CONNECT_ZONE_X:
@@ -346,7 +347,8 @@ class ListScreen(Screen):
         if zone == "connect":
             return self.connect_btn.group if self.connect_btn else None
         if zone == "tabs":
-            return self.tab_fav_g if self._fav_side(x) else self.tab_tag.group
+            tab = self._tab_at(x)
+            return self.tab_tag.group if tab == "tag" else self.tab_fav_g if tab == "fav" else self.tab_sort.group
         if zone is not None:  # a footer button; None for an arrow with no page that way
             return self._footer_at(x)[2]
         for e, card, heart, tile, g in self.cards:
@@ -361,7 +363,11 @@ class ListScreen(Screen):
         if zone == "connect":
             self.app.connect()  # connected: ask again, e.g. after a manual install
         elif zone == "tabs":
-            if self._fav_side(x):
+            tab = self._tab_at(x)
+            if tab == "sort":
+                self.next_sort()
+                return
+            if tab == "fav":
                 self.favorites_only = not self.favorites_only
             else:
                 self.tag = self.next_tag()
@@ -371,8 +377,6 @@ class ListScreen(Screen):
             self.turn(-1)
         elif zone == "view":
             self.set_view("grid" if self.app.state.view == "list" else "list")
-        elif zone == "sort":
-            self.next_sort()
         elif zone == "next":
             self.turn(1)
         elif zone == "update":

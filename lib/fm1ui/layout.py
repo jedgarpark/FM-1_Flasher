@@ -22,13 +22,14 @@ def _big():
     W=480, H=320,
     # list: header
     TITLE_AT=(12, 18),  # "FM-1 Flasher", or None
-    TAG_BTN=(124, 5, 96, 26),
-    FAV_TAB=(226, 5, 64, 26),
+    TAG_BTN=(116, 5, 84, 26),
+    FAV_TAB=(206, 5, 40, 26),  # favourites only: a heart
+    SORT_BTN=(252, 5, 70, 26),  # A-Z, New, RcntUp: one tap steps on
     FM1_RIGHT=468,  # the FM-1 status's right end
     HEADER_Y=18,
-    CONNECT_BTN=(322, 5, 150, 26),
-    TABS_ZONE=(110, 290),  # x range where header taps go to the two tabs
-    CONNECT_ZONE_X=300,  # header taps from here go to Connect FM-1
+    CONNECT_BTN=(330, 5, 142, 26),
+    TABS_ZONE=(110, 326),  # x range where header taps go to the three tabs
+    CONNECT_ZONE_X=326,  # header taps from here go to Connect FM-1
     # list: cards
     COLS=3, ROWS=2,  # six cards: the picture pool is ui.SLOTS = 6
     CARD_W=151, CARD_H=118, GAP=6,
@@ -48,7 +49,6 @@ def _big():
     NEXT=(409, 286, 64, 32),
     VIEW=(80, 286, 36, 32),  # the grid/list toggle: one tap switches
     VIEW_ICON_DY=10,
-    SORT_BTN=(122, 286, 62, 32),  # A-Z, New, Recent: one tap steps on
     PAGE_Y=296,
     PAGE_BETWEEN=False,  # page number between the left buttons and NEXT, not centred
     SETTINGS_BTN=None,  # the gear (boards with WiFi), or None
@@ -95,13 +95,14 @@ def _small():
     return dict(
     W=320, H=240,
     TITLE_AT=None,
-    TAG_BTN=(6, 5, 84, 26),
-    FAV_TAB=(96, 5, 56, 26),
+    TAG_BTN=(6, 5, 70, 26),
+    FAV_TAB=(82, 5, 34, 26),
+    SORT_BTN=(122, 5, 64, 26),
     FM1_RIGHT=312,
     HEADER_Y=18,
-    CONNECT_BTN=(176, 5, 138, 26),
-    TABS_ZONE=(0, 160),
-    CONNECT_ZONE_X=164,
+    CONNECT_BTN=(192, 5, 122, 26),
+    TABS_ZONE=(0, 189),
+    CONNECT_ZONE_X=189,
     COLS=3, ROWS=2,
     CARD_W=100, CARD_H=82, GAP=4,
     GRID_X=6, GRID_Y=36,
@@ -114,15 +115,14 @@ def _small():
     ROW_W=152, ROW_H=26, ROW_PITCH=28,
     LIST_ROWS=6,
     ROW_HEART_DY=8,
-    PREV=(6, 208, 34, 28),
-    NEXT=(280, 208, 34, 28),
-    VIEW=(46, 208, 32, 28),
+    PREV=(6, 208, 40, 28),
+    NEXT=(274, 208, 40, 28),
+    VIEW=(52, 208, 32, 28),
     VIEW_ICON_DY=8,
-    SORT_BTN=(84, 208, 58, 28),
     PAGE_Y=222,
     PAGE_BETWEEN=True,
-    SETTINGS_BTN=(148, 208, 32, 28),
-    UPDATE_BTN=(186, 208, 54, 28),
+    SETTINGS_BTN=(90, 208, 32, 28),
+    UPDATE_BTN=(128, 208, 60, 28),
     SCROLL=True,
     DATE_Y=None,
     BACK_BTN=(6, 6, 64, 26),

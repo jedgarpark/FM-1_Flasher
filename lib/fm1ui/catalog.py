@@ -14,9 +14,9 @@ MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", 
 
 # How the lists can be sorted, in the order the Sort button steps through
 # them: by name (stock first), newest on the hub first ("New"), newest
-# release first ("Recent": recently updated).
+# release first ("RcntUp": recently updated).
 SORTS = ("az", "new", "updated")
-SORT_LABELS = {"az": "A-Z", "new": "New", "updated": "Recent"}
+SORT_LABELS = {"az": "A-Z", "new": "New", "updated": "RcntUp"}
 _SORT_COLUMN = {"new": 6, "updated": 7}
 
 

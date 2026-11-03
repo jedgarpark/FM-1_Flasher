@@ -200,11 +200,12 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
 
 ## To look into
 
-- [x] Sort the lists: A-Z, New (newest on the hub first) and Recent
+- [x] Sort the lists: A-Z, New (newest on the hub first) and RcntUp
       (newest release first). meta.json keeps the catalogue's `added` and
       `date`, and `index.txt` carries them as two more columns (older cards'
       six-column lines still read, and sort last). A Sort button in the
-      footer beside the view toggle steps through the three; the choice is
+      header beside the tag and favourites tabs steps through the three
+      (the favourites tab is now just the heart); the choice is
       kept in the state. Update firmwares copies the dates into an older
       card's unchanged firmwares (at once when there's nothing to download).
 
