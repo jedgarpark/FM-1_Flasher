@@ -61,16 +61,36 @@ repo.
 
 ## Phase 0: Spikes (go/no-go, REPL scripts, no UI)
 
-- [ ] Display and touch: latest CircuitPython on the Metro, the shield's
-      display, touch and backlight working stacked.
-- [ ] USB host: the FM-1 enumerates (if not, build with a 512-byte
-      enumeration buffer); identity query; a V15 → SLOOP → V15 round trip
+Bench setup: the Metro came without TinyUF2 (double-click reset did
+nothing). BOOT + Reset gives the ROM loader (no drive); TinyUF2 0.36.0's
+`combined.bin` was written at 0x0 with `esptool`, then a plain Reset gives
+METROP4BOOT. This board's chip reports revision v0.1, which TinyUF2 and
+CircuitPython accept.
+
+- [x] Display and touch (`device/metro_spike_display.py`): `board.SPI()`
+      through the ICSP header with no jumpers (CS D10, DC D9, 40 MHz); a
+      full-screen refresh takes 65 ms. Touch is an FT6206 (`adafruit_focaltouch`,
+      0x38, chip ID 0x06) reporting portrait: screen x = 319 - raw y,
+      screen y = raw x.
+- [ ] USB host: the port works (a keyboard enumerated in 0.6 s), but on the
+      stock build the FM-1 doesn't enumerate in 20 s, as expected with the
+      288-byte buffer. Next: a build with a 512-byte buffer
+      (`ref/cp-metro-p4`, branch `fm1-metro-p4`); identity query; a V15 → SLOOP → V15 round trip
       with `fm1usb`/`fm1update` on short and long cables, timed against
       v1's ~70 s.
-- [ ] SD card: `sdioio` mount; package checks with full verification
-      (no `checked=True` shortcut), timed.
-- [ ] WiFi: connect, fetch `catalog.json` over HTTPS, stream one package to
-      the card (throughput), decode one hub PNG on the device (time).
+- [x] SD card (`device/metro_spike_net.py`): the board doesn't mount it;
+      `sdioio.SDCard` (4-bit, 40 MHz) plus `storage.mount` does. 1 MB writes
+      at 1.6-1.75 MB/s, reads at 6.9-7.7 MB/s. The full package checks on
+      SLOOP (610 KB) take 2.3 s. Card detect (`board.SD_CD`) reads low with
+      a card in.
+- [x] WiFi (`device/metro_spike_net.py`): `catalog.json` (148 firmwares,
+      290 KB) in 3.6 s; SLOOP 2.8.4 streamed to the card at 0.21 MB/s with a
+      matching SHA-256 (a full card, ~90 MB, would take ~7 min); 15 MB free
+      RAM. The hub's picture (480x480 full-colour PNG, 4 KB) takes 9.3 s to
+      decode with `adafruit_imageload`: too slow to do all ~150 at once
+      (~23 min). Decode on first view and cache, or ask the hub for small
+      BMPs. One hard fault into safe mode right after WiFi credentials were
+      first added to `settings.toml`; it didn't recur after a reset.
 
 ## Phase 1: Port
 
