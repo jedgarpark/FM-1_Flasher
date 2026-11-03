@@ -411,7 +411,7 @@ class PlanScreen:
     """The plan's firmwares, from Details on the Update screen: the new ones
     first, then the updated ones with the version on the card and the new one."""
 
-    ROW_H, PITCH, TOP = 28, 32, 40
+    ROW_H, PITCH, TOP = 24, 24, 40  # plain lines: they aren't buttons
 
     def __init__(self, app, plan):
         from fm1ui.settings import _Paged
@@ -451,13 +451,14 @@ class PlanScreen:
         per = self.per_page()
         for i, (label, change, color) in enumerate(C.page_slice(self.rows, self.page, per)):
             y = self.TOP + i * self.PITCH
-            g.append(ui.outlined(6, y, W - 12, self.ROW_H, ui.PANEL, ui.LINE))
+            if i:
+                g.append(ui.rect(12, y, W - 24, 1, ui.LINE))  # a hairline between lines
             room = W - 12 - 24
             change = C.ellipsize(change, lambda s: ui.width(ui.SMALL, s), room // 2)
             cw = ui.width(ui.SMALL, change)
             g.append(ui.text(ui.NAME, C.ellipsize(label, lambda s: ui.width(ui.NAME, s), room - cw - 10),
-                             ui.FG, 16, y + self.ROW_H // 2, (0, 0.5)))
-            g.append(ui.text(ui.SMALL, change, color, W - 16, y + self.ROW_H // 2, (1, 0.5)))
+                             ui.FG, 12, y + self.ROW_H // 2, (0, 0.5)))
+            g.append(ui.text(ui.SMALL, change, color, W - 12, y + self.ROW_H // 2, (1, 0.5)))
         if self.pages > 1:
             parts.append("%d/%d" % (self.page + 1, self.pages))
         g.append(ui.text(ui.SMALL, "  ".join(parts), ui.FG, W // 2, L.H - 18, (0.5, 0.5)))
