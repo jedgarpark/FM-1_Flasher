@@ -25,6 +25,7 @@ import fm1proto as P
 HUB = "https://thefirmwarehub.com/"
 STOCK_ID = "stock-v15"
 PART = ".part"
+DATES = ("added", "date")  # when the hub first listed a firmware; its release date
 
 
 # -- the catalogue -------------------------------------------------------------
@@ -66,7 +67,8 @@ def meta_for(e):
             ("https://github.com/" + e["repo"] if e.get("repo") else None),
             "genre": ",".join(kind) if isinstance(kind, list) else kind, "beta": bool(e.get("beta")),
             "release_version": e.get("version"), "description": e.get("what"),
-            "license": e.get("lic"), "date": e.get("date"), "installs": e.get("installs")}
+            "license": e.get("lic"), "date": e.get("date"), "added": e.get("added"),
+            "installs": e.get("installs")}
     return dict((k, v) for k, v in meta.items() if v is not None)
 
 
@@ -217,17 +219,39 @@ def matches(root, e):
                 and exists(d + "/" + m.get("file", "")))
 
 
+def dates_differ(root, e):
+    """Does the card's meta.json for unchanged entry `e` lack the catalogue's
+    dates (cards made before the lists could sort by them)?"""
+    m = read_meta(root + "/" + e["id"]) or {}
+    return any(e.get(k) and m.get(k) != e.get(k) for k in DATES)
+
+
+def set_dates(root, e):
+    """Copy the catalogue's dates into an unchanged firmware's meta.json."""
+    d = root + "/" + e["id"]
+    m = read_meta(d)
+    if m is None:
+        return
+    for k in DATES:
+        if e.get(k):
+            m[k] = e[k]
+    write_json(d + "/meta.json", m)
+
+
 class Plan:
     """What an update would do: new and updated catalogue entries to
-    download. Firmwares the hub no longer lists are left alone."""
+    download, and unchanged ones whose meta.json needs the catalogue's dates
+    (`dated`). Firmwares the hub no longer lists are left alone."""
 
     def __init__(self, cat, root, ids=None):
         self.updated_at = cat.get("updated")
-        self.new, self.changed, self.same = [], [], []
+        self.new, self.changed, self.same, self.dated = [], [], [], []
         wanted = entries(cat, ids)
         for e in wanted:
             if matches(root, e):
                 self.same.append(e)
+                if dates_differ(root, e):
+                    self.dated.append(e)
             elif read_meta(root + "/" + e["id"]):
                 self.changed.append(e)
             else:
@@ -306,8 +330,10 @@ def download(root, e, stream, chunk=None):
 
 def write_index(root, updated=None):
     """firmware/index.txt: what the device's list screen reads, one tab-separated
-    line per firmware (slug, name, version, genre, beta, product), stock first,
-    then by name. The first line is the catalogue date. Returns the count."""
+    line per firmware (slug, name, version, genre, beta, product, added, date),
+    stock first, then by name. The first line is the catalogue date. The
+    dates (YYYY-MM-DD, or empty) sort the lists by New and Updated. Returns
+    the count."""
     path = root + "/index.txt"
     if updated is None:
         try:
@@ -321,7 +347,7 @@ def write_index(root, updated=None):
         if not m or "product" not in m:
             continue
         fields = (slug, m.get("name", slug), m.get("version", ""), m.get("genre") or m.get("kind", ""),
-                  1 if m.get("beta") else 0, m["product"])
+                  1 if m.get("beta") else 0, m["product"], m.get("added") or "", m.get("date") or "")
         line = "\t".join(str(v).replace("\t", " ").replace("\n", " ") for v in fields)
         rows.append((m.get("kind") != "stock", m.get("name", slug).lower(), line))
     rows.sort()

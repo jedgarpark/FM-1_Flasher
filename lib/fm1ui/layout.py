@@ -48,6 +48,7 @@ def _big():
     NEXT=(409, 286, 64, 32),
     VIEW=(80, 286, 36, 32),  # the grid/list toggle: one tap switches
     VIEW_ICON_DY=10,
+    SORT_BTN=(122, 286, 62, 32),  # A-Z, New, Recent: one tap steps on
     PAGE_Y=296,
     PAGE_BETWEEN=False,  # page number between the left buttons and NEXT, not centred
     SETTINGS_BTN=None,  # the gear (boards with WiFi), or None
@@ -113,14 +114,15 @@ def _small():
     ROW_W=152, ROW_H=26, ROW_PITCH=28,
     LIST_ROWS=6,
     ROW_HEART_DY=8,
-    PREV=(6, 208, 40, 28),
-    NEXT=(274, 208, 40, 28),
-    VIEW=(52, 208, 32, 28),
+    PREV=(6, 208, 34, 28),
+    NEXT=(280, 208, 34, 28),
+    VIEW=(46, 208, 32, 28),
     VIEW_ICON_DY=8,
+    SORT_BTN=(84, 208, 58, 28),
     PAGE_Y=222,
     PAGE_BETWEEN=True,
-    SETTINGS_BTN=(90, 208, 32, 28),
-    UPDATE_BTN=(128, 208, 60, 28),
+    SETTINGS_BTN=(148, 208, 32, 28),
+    UPDATE_BTN=(186, 208, 54, 28),
     SCROLL=True,
     DATE_Y=None,
     BACK_BTN=(6, 6, 64, 26),

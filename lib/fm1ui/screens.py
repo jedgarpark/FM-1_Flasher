@@ -93,7 +93,7 @@ def fm1_status(app):
 
 
 class ListScreen(Screen):
-    """Six cards or 16 names a page, a tag filter, a favourites filter, and
+    """Six cards or 16 names a page, a tag filter, a favourites filter, a sort, and
     the FM-1 in the header."""
 
     KEEP = Screen.KEEP + ("page", "favorites_only", "tag")
@@ -107,7 +107,8 @@ class ListScreen(Screen):
 
     def items(self):
         """Index positions of the entries the filters show."""
-        return self.app.index.select(self.app.state.favorites if self.favorites_only else None, self.tag)
+        st = self.app.state
+        return self.app.index.select(st.favorites if self.favorites_only else None, self.tag, st.sort)
 
     def per_page(self):
         return 2 * L.LIST_ROWS if self.app.state.view == "list" else L.COLS * L.ROWS
@@ -184,6 +185,9 @@ class ListScreen(Screen):
         g.append(self.view_g)
         # The footer's buttons, left to right, as (rect, name, group or None).
         self.footer = [(self.prev, "prev", self.arrows[0]), (L.VIEW, "view", self.view_g)]
+        sort = ui.Button(C.SORT_LABELS.get(app.state.sort, "A-Z"), *L.SORT_BTN, name=ui.SMALL)
+        g.append(sort.group)
+        self.footer.append((L.SORT_BTN, "sort", sort.group))
         if app.updater is not None and L.SETTINGS_BTN:
             sx, sy, sw, sh = L.SETTINGS_BTN
             gear = ui.outlined(sx, sy, sw, sh, ui.PANEL, ui.LINE)
@@ -293,6 +297,14 @@ class ListScreen(Screen):
             self.page = first // self.per_page()  # keep the top entry on screen
             self.app.show()
 
+    def next_sort(self):
+        """A-Z -> New -> Recent -> A-Z, from the first page."""
+        st = self.app.state
+        st.sort = C.next_sort(st.sort)
+        st.save()
+        self.page = 0
+        self.app.show()
+
     def turn(self, delta):
         page = self.page + delta
         if 0 <= page < self.pages:
@@ -317,7 +329,7 @@ class ListScreen(Screen):
         return best
 
     def _zone(self, x, y):
-        """"connect", "tabs", a footer button's name ("prev", "view",
+        """"connect", "tabs", a footer button's name ("prev", "view", "sort",
         "settings", "update", "next") or None."""
         if y < L.GRID_Y - 2:
             if x >= L.CONNECT_ZONE_X:
@@ -359,6 +371,8 @@ class ListScreen(Screen):
             self.turn(-1)
         elif zone == "view":
             self.set_view("grid" if self.app.state.view == "list" else "list")
+        elif zone == "sort":
+            self.next_sort()
         elif zone == "next":
             self.turn(1)
         elif zone == "update":

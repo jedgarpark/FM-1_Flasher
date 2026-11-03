@@ -65,6 +65,29 @@ class Plan(unittest.TestCase):
             put(root, "a", {"catalog_id": "a", "sha256": cat["firmwares"][0]["sha256"]}, data)
             self.assertEqual(K.Plan(cat, root).summary(), "Up to date")
 
+    def test_dates_for_older_cards(self):
+        """A card made before the lists sorted by date gets the catalogue's
+        dates copied into unchanged firmwares' meta.json, and index.txt."""
+        with tempfile.TemporaryDirectory() as root:
+            data = b"pkg"
+            e = entry("a", data, added="2026-10-08", date="2026-10-24")
+            cat = {"firmwares": [e]}
+            put(root, "a", {"catalog_id": "a", "sha256": e["sha256"], "name": "A", "product": "FM-1_900",
+                            "date": "2026-10-24"}, data)
+            p = K.Plan(cat, root)
+            self.assertEqual(p.summary(), "Up to date")
+            self.assertEqual([x["id"] for x in p.dated], ["a"])
+            K.set_dates(root, e)
+            self.assertEqual(K.Plan(cat, root).dated, [])
+            self.assertEqual(K.read_meta(os.path.join(root, "a"))["added"], "2026-10-08")
+            K.write_index(root)
+            with open(os.path.join(root, "index.txt")) as f:
+                self.assertTrue(f.read().endswith("\tFM-1_900\t2026-10-08\t2026-10-24\n"))
+
+    def test_meta_keeps_the_dates(self):
+        meta = K.meta_for(entry("a", b"x", added="2026-10-08", date="2026-10-24"))
+        self.assertEqual((meta["added"], meta["date"]), ("2026-10-08", "2026-10-24"))
+
 
 class Card(unittest.TestCase):
     def test_index_skips_folders_without_meta(self):
@@ -75,8 +98,8 @@ class Card(unittest.TestCase):
             self.assertEqual(K.write_index(root, "today"), 2)
             with open(os.path.join(root, "index.txt")) as f:
                 lines = f.read().splitlines()
-            self.assertEqual(lines, ["updated\ttoday", "s\tZed V15\t\tstock\t0\tFM-1_015",
-                                     "b\tBeta\t2\tsynth\t0\tFM-1_900"])
+            self.assertEqual(lines, ["updated\ttoday", "s\tZed V15\t\tstock\t0\tFM-1_015\t\t",
+                                     "b\tBeta\t2\tsynth\t0\tFM-1_900\t\t"])
             K.write_index(root)  # keeps the date
             with open(os.path.join(root, "index.txt")) as f:
                 self.assertEqual(f.readline(), "updated\ttoday\n")
