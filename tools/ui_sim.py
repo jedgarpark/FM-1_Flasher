@@ -176,10 +176,49 @@ class FakeInstaller:
 class HubNet:
     """fm1ui.update's network, with urllib."""
 
-    def __init__(self, only=None):
+    # Settings > WiFi's networks, simulated: these are "in range", any
+    # password joins except "wrongpass", and the saved list is a JSON file.
+    IN_RANGE = [("Home Studio", -48, False), ("Cafe Guest", -71, True), ("Rehearsal Room 5G", -62, False),
+                ("Neighbours", -84, False), ("Venue Backstage", -58, False), ("Printer-1234", -77, True),
+                ("Studio B", -66, False)]
+
+    def __init__(self, only=None, wifi_path=None):
+        from fm1ui import networks
         self.only = only
+        self.joined = "Home Studio"
+        self.wifi_path = wifi_path
+
+        def load():
+            try:
+                with open(wifi_path) as f:
+                    return f.read()
+            except (OSError, TypeError):
+                return None
+
+        def store(s):
+            if wifi_path:
+                with open(wifi_path, "w") as f:
+                    f.write(s)
+            return True
+        self.saved = networks.Saved(load, store)
+
+    def toml(self):
+        return ("Home Studio", "hunter22")
 
     def connect(self):
+        return None
+
+    def status(self):
+        return (self.joined, "192.168.1.42") if self.joined else (None, None)
+
+    def scan(self):
+        from fm1ui import networks
+        return networks.strongest(self.IN_RANGE)
+
+    def join(self, ssid, password):
+        if password == "wrongpass":
+            return "Authentication failure"
+        self.joined = ssid
         return None
 
     def _open(self, url):
@@ -354,7 +393,8 @@ def main():
     touch = ScriptTouch()
     probe = FakeProbe(None if args.identity == "none" else args.identity)
     width, _, height = args.size.partition("x")
-    net = HubNet(args.hub_only.split(",") if args.hub_only else None) if args.hub or args.hub_only else None
+    net = (HubNet(args.hub_only.split(",") if args.hub_only else None, state.path + ".wifi")
+           if args.hub or args.hub_only else None)
     app = A.App(SimDisplay(int(width), int(height)), touch, args.root, state, probe, FakeInstaller(animate=not args.do),
                 updater=net)
     if args.do:
