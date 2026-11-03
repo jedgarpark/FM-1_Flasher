@@ -113,39 +113,99 @@ def mount_sd(spi):
 
 
 class Network:
-    """WiFi for Update firmwares (fm1ui.update), with the credentials
-    CircuitPython itself uses, from settings.toml. CircuitPython usually has
-    WiFi up already by then (its web workflow connects at start)."""
+    """WiFi for Update firmwares (fm1ui.update) and Settings > WiFi
+    (fm1ui.settings): the networks saved there, kept in NVM so they stay with
+    the flasher when the card changes, and the one in settings.toml, which
+    CircuitPython itself joins at start (its web workflow)."""
+
+    NVM_WIFI = b"FM1W"
+    NVM_AT = 4096  # fm1ui.device keeps 0 (a queued install) and 512 (the list state)
+    JOIN_S = 15
 
     def __init__(self):
+        from fm1ui import device as D
+        from fm1ui import networks
         self.http = None
+        self.saved = networks.Saved(lambda: D._nvm_read(self.NVM_WIFI, self.NVM_AT),
+                                    lambda s: D._nvm_write(self.NVM_WIFI, self.NVM_AT, s.encode()))
 
-    def connect(self):
-        """None when connected, else what to tell the user."""
+    @staticmethod
+    def toml():
+        """settings.toml's (ssid, password), or None."""
         import os
+        ssid = os.getenv("CIRCUITPY_WIFI_SSID")
+        return (ssid, os.getenv("CIRCUITPY_WIFI_PASSWORD") or "") if ssid else None
+
+    def status(self):
+        """(the network joined, its IP address), or (None, None)."""
         import wifi
         if not wifi.radio.connected:
-            ssid = os.getenv("CIRCUITPY_WIFI_SSID")
-            if not ssid:
-                return ("No WiFi set up. Add CIRCUITPY_WIFI_SSID and CIRCUITPY_WIFI_PASSWORD "
-                        "to settings.toml on CIRCUITPY.")
+            return None, None
+        info = wifi.radio.ap_info
+        return (info.ssid if info else "?"), str(wifi.radio.ipv4_address)
+
+    def scan(self):
+        """Networks in range as (ssid, rssi, open), one per name, strongest first."""
+        import wifi
+        from fm1ui import networks
+        found = []
+        try:
+            for n in wifi.radio.start_scanning_networks():
+                found.append((n.ssid, n.rssi, wifi.AuthMode.OPEN in n.authmode))
+        finally:
+            wifi.radio.stop_scanning_networks()
+        return networks.strongest(found)
+
+    def join(self, ssid, password):
+        """Join one network. None when joined, else what went wrong; then
+        it goes back to the network it was on, if it knows that password."""
+        import wifi
+        before, _ = self.status()
+        try:
+            wifi.radio.connect(ssid, password, timeout=self.JOIN_S)
+            return None
+        except (ConnectionError, OSError) as e:
+            err = str(e) or repr(e)
+        from fm1ui import networks
+        for s, p in networks.candidates(self.saved, self.toml()):
+            if before and s == before and s != ssid:
+                try:
+                    wifi.radio.connect(s, p, timeout=self.JOIN_S)
+                except (ConnectionError, OSError):
+                    pass
+        return err
+
+    def connect(self):
+        """Be on a network: stay on the one joined, else the first saved one
+        in range (most recently used first), then settings.toml's. None when
+        connected, else what to tell the user."""
+        import wifi
+        from fm1ui import networks
+        if not wifi.radio.connected:
+            tries = networks.candidates(self.saved, self.toml())
+            if not tries:
+                return "No WiFi set up. Add a network in Settings (the gear), or in settings.toml on CIRCUITPY."
             try:
-                wifi.radio.connect(ssid, os.getenv("CIRCUITPY_WIFI_PASSWORD") or "", timeout=20)
-            except (ConnectionError, OSError) as e:
-                return "Couldn't join WiFi %s (%s)." % (ssid, str(e) or repr(e))
+                seen = [n[0] for n in self.scan()]
+                tries = [c for c in tries if c[0] in seen]
+                if not tries:
+                    return "None of the saved WiFi networks is in range."
+            except (OSError, RuntimeError):
+                pass  # can't scan: try them all
+            err = None
+            for ssid, password in tries:
+                err = self.join(ssid, password)
+                if err is None:
+                    self.saved.used(ssid)
+                    break
+            else:
+                return "Couldn't join WiFi %s (%s)." % (tries[-1][0], err)
         if self.http is None:
             import adafruit_connection_manager as cm
             import adafruit_requests
             pool = cm.get_radio_socketpool(wifi.radio)
             self.http = adafruit_requests.Session(pool, cm.get_radio_ssl_context(wifi.radio))
         return None
-
-    def status(self):
-        """(network name from settings.toml or None, IP address or None)."""
-        import os
-        import wifi
-        ip = wifi.radio.ipv4_address if wifi.radio.connected else None
-        return os.getenv("CIRCUITPY_WIFI_SSID"), str(ip) if ip else None
 
     def _get(self, url):
         r = self.http.get(url, headers={"User-Agent": "FM-1_Flasher"}, timeout=30)
