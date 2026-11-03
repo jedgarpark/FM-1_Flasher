@@ -291,6 +291,8 @@ def press(group):
     """Show an outlined() group (a button, card or tab) as pressed. Returns
     what release() needs to put it back. The shapes get other shared
     palettes; the palettes themselves never change."""
+    if hasattr(group, "press"):  # e.g. fm1ui.flat.Highlight
+        return group.press()
     edge, fill = group[0], group[1]
     old = (edge.pixel_shader, fill.pixel_shader)
     cyan = fill.pixel_shader is palette(CYAN)
@@ -300,6 +302,9 @@ def press(group):
 
 
 def release(group, old):
+    if hasattr(group, "release"):
+        group.release(old)
+        return
     group[0].pixel_shader, group[1].pixel_shader = old
 
 

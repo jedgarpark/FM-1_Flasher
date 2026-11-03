@@ -43,7 +43,9 @@ def display_setup():
     import adafruit_ili9341
     displayio.release_displays()
     spi = board.SPI()
-    bus = fourwire.FourWire(spi, command=board.D9, chip_select=board.D10, baudrate=40_000_000)
+    # 80 MHz: clean on the shield, and scrolling pages need it (29 fps, not
+    # 22 at 40 MHz; device/metro_spike_scroll.py).
+    bus = fourwire.FourWire(spi, command=board.D9, chip_select=board.D10, baudrate=80_000_000)
     return adafruit_ili9341.ILI9341(bus, width=W, height=H, auto_refresh=False), spi
 
 

@@ -52,6 +52,7 @@ def _big():
     PAGE_BETWEEN=False,  # page number between the left buttons and NEXT, not centred
     SETTINGS_BTN=None,  # the gear (boards with WiFi), or None
     UPDATE_BTN=None,  # Update firmwares (boards with WiFi), or None
+    SCROLL=False,  # pages can scroll with the finger (fm1ui.flat; needs the RAM)
     DATE_Y=311,  # catalogue date, or None
     # details
     BACK_BTN=(8, 8, 84, 30),
@@ -120,6 +121,7 @@ def _small():
     PAGE_BETWEEN=True,
     SETTINGS_BTN=(90, 208, 32, 28),
     UPDATE_BTN=(128, 208, 60, 28),
+    SCROLL=True,
     DATE_Y=None,
     BACK_BTN=(6, 6, 64, 26),
     HEART_BTN=(270, 6, 44, 26),

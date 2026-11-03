@@ -66,9 +66,16 @@ app = A.App(display, D.Touch(), root, state, D.Probe(), D.Installer(),
             updater=D.Network() if D.Network is not None else None)
 print("free RAM:", gc.mem_free())
 D.display_redo(display)  # after a start, not a reload
+home = None  # the list; with Settings > Scroll pages on the Metro, the one that scrolls
+if D.Network is not None:
+    from fm1ui import layout
+    if layout.L.SCROLL:
+        from fm1ui import flat
+        home = flat.list_screen(app)
 if fill:
     from fm1ui import screens as S
     from fm1ui.update import UpdateScreen
-    app.stack.append(S.ListScreen(app))  # under it: where Back and OK go
+    home = home or S.ListScreen(app)
+    app.stack.append(home)  # under it: where Back and OK go
     app.run(UpdateScreen(app))
-app.run()
+app.run(home)

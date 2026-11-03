@@ -43,6 +43,15 @@ def _bars(g, x, y, n, h=14):
         g.append(ui.rect(x + i * 5, y + h - bh, 3, bh, ui.CYAN if i < n else ui.LINE))
 
 
+def _switch(x, y, on):
+    """An on/off switch, 46x22: a knob at the right on cyan, or at the left."""
+    g = ui.outlined(x, y, 46, 22, ui.CYAN if on else ui.BG, ui.CYAN if on else ui.LINE, cut=6)
+    kx = x + 26 if on else x + 4
+    g.append(ui.panel(kx, y + 4, 16, 14, ui.BG if on else ui.DIM, 4))
+    g.append(ui.text(ui.SMALL, "On" if on else "Off", ui.BG if on else ui.DIM, x - 8, y + 11, (1, 0.5)))
+    return g
+
+
 class _Paged(Screen):
     """A screen with a page of rows and arrows in the footer."""
 
@@ -119,21 +128,48 @@ class SettingsScreen(Screen):
         self.wifi_g.append(ui.text(ui.BODY, state, ui.OK if ssid else ui.WARN, x + w - 26, y + h // 2, (1, 0.5)))
         self.wifi_g.append(ui.triangle(x + w - 16, y + h // 2 - 6, 7, 12, ui.DIM, False))
         g.append(self.wifi_g)
+        self.scroll_rect = None
+        if L.SCROLL:
+            self.scroll_rect = (x, y + h + 8, w, h)
+            sx, sy = x, y + h + 8
+            on = self.app.state.scroll
+            self.scroll_g = ui.outlined(*self.scroll_rect, ui.PANEL, ui.LINE)
+            self.scroll_g.append(ui.text(ui.NAME, "Scroll pages", ui.FG, sx + 12, sy + h // 2, (0, 0.5)))
+            self.scroll_g.append(_switch(sx + w - 58, sy + (h - 22) // 2, on))
+            g.append(self.scroll_g)
         self.group = g
         return g
 
     def target(self, x, y):
         if self.back.hit(x, y):
             return self.back.group
-        if _hit(self.wifi_rect, x, y, 6):
+        if _hit(self.wifi_rect, x, y, 3):
             return self.wifi_g
+        if self.scroll_rect and _hit(self.scroll_rect, x, y, 3):
+            return self.scroll_g
         return None
 
     def tap(self, x, y):
         if self.back.hit(x, y):
             self.app.pop()
-        elif _hit(self.wifi_rect, x, y, 6):
+        elif _hit(self.wifi_rect, x, y, 3):
             self.app.push(WifiScreen(self.app))
+        elif self.scroll_rect and _hit(self.scroll_rect, x, y, 3):
+            self.toggle_scroll()
+
+    def toggle_scroll(self):
+        """Scroll pages on or off: the list under Settings becomes the other kind."""
+        from fm1ui import flat
+        app = self.app
+        app.state.scroll = not app.state.scroll
+        app.state.save()
+        old = app.stack[0]
+        new = flat.list_screen(app)
+        for k in ("page", "favorites_only", "tag"):
+            setattr(new, k, getattr(old, k))
+        old.release()
+        app.stack[0] = new
+        app.show()
 
     def swipe(self, dx):
         if dx > 0:

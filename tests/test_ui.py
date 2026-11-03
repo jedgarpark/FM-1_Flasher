@@ -137,7 +137,22 @@ class Gestures(unittest.TestCase):
         self.assertEqual(self.feed((100, 50), (104, 52)), [("down", 100, 50), ("tap", 100, 50)])
 
     def test_swipe(self):
-        self.assertEqual(self.feed((300, 150), (250, 152), (200, 160)), [("down", 300, 150), ("swipe", -100)])
+        # A sideways move is a drag as it goes (only the latest position is
+        # queued), and a swipe when it lets go.
+        self.assertEqual(self.feed((300, 150), (250, 152), (200, 160)),
+                         [("down", 300, 150), ("drag", -100, 300, 150), ("swipe", -100)])
+
+    def test_no_drag_for_a_roll_or_an_up_down_move(self):
+        self.assertEqual(self.feed((100, 50), (108, 52)), [("down", 100, 50), ("tap", 100, 50)])
+        self.assertEqual(self.feed((100, 50), (115, 95)), [("down", 100, 50), ("up",)])
+
+    def test_drag_events_as_it_moves(self):
+        g = self.g
+        g.sample((100, 50))
+        g.sample((120, 52))
+        self.assertEqual([g.event(), g.event()], [("down", 100, 50), ("drag", 20, 100, 50)])
+        g.sample((90, 51))  # back past the start: still a drag
+        self.assertEqual(g.event(), ("drag", -10, 100, 50))
 
     def test_drag_only_lets_go(self):
         self.assertEqual(self.feed((100, 50), (140, 90)), [("down", 100, 50), ("up",)])
