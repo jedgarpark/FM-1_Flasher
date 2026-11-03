@@ -157,18 +157,27 @@ user found the screens good on the 2.8" panel.
 
 ## Phase 2: Update firmwares on the device
 
-- [ ] Move the catalogue logic out of `make_sd.py` into a shared
+- [x] Move the catalogue logic out of `make_sd.py` into a shared
       `fm1catalog.py` for CPython and CircuitPython, with swappable fetch
       and file access (also usable by a web page later).
-- [ ] An Update firmwares screen: WiFi, a plan ("12 new, 3 updated,
+- [x] An Update firmwares screen: WiFi, a plan ("12 new, 3 updated,
       8 MB"), downloads with progress, SHA-256 against the
       catalogue plus the full package checks, pictures, `index.txt`, and
       no removals: a firmware the hub drops or moves to its own installer
       stays on the card until its owner deletes it (also in `make_sd.py`).
-- [ ] Resumable: write to a temporary name, then rename, so a power cut
+- [x] Resumable: write to a temporary name, then rename, so a power cut
       leaves a working card.
-- [ ] WiFi credentials from `settings.toml` at first; on-screen entry later.
-      Offer to fill an empty card at first start.
+- [x] WiFi credentials from `settings.toml`. Offer to fill an empty card at
+      first start (tested in the simulator, not yet on the Metro).
+- [ ] On-screen WiFi credential entry.
+
+Result (2 to 3 November 2026): the Metro brought a card made on 29 October
+up to date over WiFi, 31 new and 45 updated firmwares (46.4 MB), about 9 s
+per firmware with all checks, then the pictures (about 5 s each, PNG decoded
+and reduced on the device). Afterwards the card held all 145 firmwares the
+catalogue had then, with no `.part` files left; the only differences from
+the hub were 10 firmwares it added or updated later that day. Pictures:
+137 converted, 7 marked as missing on the hub.
 
 ## Phase 3: Battery and release
 
