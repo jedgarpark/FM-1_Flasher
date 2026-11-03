@@ -34,11 +34,10 @@ def needs_picture(root, slug):
 
 def picture_list(root, plan):
     """Catalogue ids on the card (after the plan runs) without a picture yet."""
-    gone = set(plan.removed)
     fresh = set(e["id"] for e in plan.downloads)
     out = []
     for e in plan.same + plan.downloads:
-        if e["id"] in gone or e["id"] == K.STOCK_ID:
+        if e["id"] == K.STOCK_ID:
             continue
         if e["id"] in fresh or needs_picture(root, e["id"]):
             out.append(e)
@@ -50,15 +49,9 @@ def estimate_s(plan, pictures):
 
 
 def job(root, plan, net, stats):
-    """A generator: remove, download, then fetch pictures, yielding
-    (phase, done, total, name) as it goes. Counts land in `stats`."""
+    """A generator: download, then fetch pictures, yielding (phase, done,
+    total, name) as it goes. Counts land in `stats`. Nothing is removed."""
     K.clean_parts(root)
-    for i, slug in enumerate(plan.removed):
-        yield ("Removing", i, len(plan.removed), slug)
-        K.remove(root, slug)
-        stats["removed"] += 1
-    if plan.removed:
-        K.write_index(root)  # the catalogue date only once it's all done
 
     total = plan.bytes
     base = 0
@@ -230,9 +223,9 @@ class UpdateScreen:
             self.sub.set("Catalogue " + C.nice_date(p.updated_at))
             self._set_note(" ")
             self.info.set(" ")
-            if p.downloads or p.removed or self.pics:
+            if p.downloads or self.pics:
                 counts = []
-                for n, what in ((len(p.new), "new"), (len(p.changed), "updated"), (len(p.removed), "removed")):
+                for n, what in ((len(p.new), "new"), (len(p.changed), "updated")):
                     if n:
                         counts.append("%d %s" % (n, what))
                 size = []
@@ -256,8 +249,7 @@ class UpdateScreen:
         elif m == "done":
             s = self.stats
             done = []
-            for k, label in (("new", "added"), ("updated", "updated"), ("removed", "removed"),
-                             ("pictures", "pictures")):
+            for k, label in (("new", "added"), ("updated", "updated"), ("pictures", "pictures")):
                 if s[k]:
                     done.append("%d %s" % (s[k], label))
             failed = s["failed"]
@@ -341,7 +333,7 @@ class UpdateScreen:
 
     def start_run(self):
         self.mode = "run"
-        self.stats = {"new": 0, "updated": 0, "removed": 0, "pictures": 0, "failed": [], "index": False}
+        self.stats = {"new": 0, "updated": 0, "pictures": 0, "failed": [], "index": False}
         self.work = job(self.app.root, self.plan, self.app.updater, self.stats)
         self.t0 = time.monotonic()
         self._show()

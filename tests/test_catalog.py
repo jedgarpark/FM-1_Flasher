@@ -39,7 +39,7 @@ def put(root, slug, meta, data=b"x"):
 
 
 class Plan(unittest.TestCase):
-    def test_new_changed_same_removed(self):
+    def test_new_changed_same_and_nothing_removed(self):
         with tempfile.TemporaryDirectory() as root:
             same, newer = b"same", b"newer"
             cat = {"updated": "2026-11-03 03:00 UTC", "firmwares": [
@@ -54,11 +54,9 @@ class Plan(unittest.TestCase):
             self.assertEqual([e["id"] for e in p.new], ["fresh"])
             self.assertEqual([e["id"] for e in p.changed], ["bump"])
             self.assertEqual([e["id"] for e in p.same], ["keep"])
-            self.assertEqual(p.removed, ["fizz", "gone"])
+            self.assertFalse(hasattr(p, "removed"))  # dropped firmwares stay on the card
             self.assertEqual(p.bytes, len(newer) + len(b"fresh"))
-            self.assertEqual(p.summary(), "1 new, 1 updated, 2 removed, 0.0 MB")
-            # a partial update (ids) removes nothing
-            self.assertEqual(K.Plan(cat, root, ["keep"]).removed, [])
+            self.assertEqual(p.summary(), "1 new, 1 updated, 0.0 MB")
 
     def test_up_to_date(self):
         with tempfile.TemporaryDirectory() as root:
@@ -84,7 +82,7 @@ class Card(unittest.TestCase):
                 self.assertEqual(f.readline(), "updated\ttoday\n")
             self.assertFalse(os.path.exists(os.path.join(root, "index.txt.part")))
 
-    def test_clean_parts_and_remove(self):
+    def test_clean_parts(self):
         with tempfile.TemporaryDirectory() as root:
             put(root, "a", {"catalog_id": "a"})
             for p in ("a/FM-1_900.fwsc.part", "a/meta.json.part", "index.txt.part"):
@@ -92,8 +90,6 @@ class Card(unittest.TestCase):
             K.clean_parts(root)
             self.assertEqual(sorted(os.listdir(os.path.join(root, "a"))), ["FM-1_900.fwsc", "meta.json"])
             self.assertEqual(os.listdir(root), ["a"])
-            K.remove(root, "a")
-            self.assertEqual(os.listdir(root), [])
 
 
 class Download(unittest.TestCase):

@@ -161,9 +161,10 @@ user found the screens good on the 2.8" panel.
       `fm1catalog.py` for CPython and CircuitPython, with swappable fetch
       and file access (also usable by a web page later).
 - [ ] An Update firmwares screen: WiFi, a plan ("12 new, 3 updated,
-      2 removed, 8 MB"), downloads with progress, SHA-256 against the
+      8 MB"), downloads with progress, SHA-256 against the
       catalogue plus the full package checks, pictures, `index.txt`, and
-      removal of firmwares the hub dropped (by `catalog_id` only).
+      no removals: a firmware the hub drops or moves to its own installer
+      stays on the card until its owner deletes it (also in `make_sd.py`).
 - [ ] Resumable: write to a temporary name, then rename, so a power cut
       leaves a working card.
 - [ ] WiFi credentials from `settings.toml` at first; on-screen entry later.

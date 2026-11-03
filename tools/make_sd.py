@@ -20,8 +20,10 @@ Sources:
                          on the card are reused when their SHA-256 matches.
                          Firmwares the hub sends to their own installer
                          (an `install` link: they write data the package
-                         doesn't carry) are left out, and removed from the
-                         card if an earlier run put them there.
+                         doesn't carry) are left out. Nothing already on the
+                         card is ever removed: a firmware the hub drops or
+                         moves to its own installer stays until you delete
+                         its folder.
 
 Every run rewrites firmware/index.txt, the list the device's UI reads.
 
@@ -39,7 +41,6 @@ import io
 import json
 import os
 import re
-import shutil
 import sys
 import urllib.request
 
@@ -83,26 +84,8 @@ def local_package(out, e):
     return None
 
 
-def remove_own_installers(cat, out):
-    """Delete card folders made from catalogue entries that now have their own
-    installer. Only folders whose meta.json names that catalogue id go."""
-    root = os.path.join(out, "firmware")
-    for e in cat["firmwares"]:
-        if not own_installer(e):
-            continue
-        d = os.path.join(root, e["id"])
-        try:
-            if json.load(open(os.path.join(d, "meta.json"))).get("catalog_id") != e["id"]:
-                continue
-        except (OSError, ValueError):
-            continue
-        shutil.rmtree(d)
-        print("removed %s: it installs from its own page, %s" % (e["id"], e["install"]))
-
-
 def from_catalog(ids, out):
     cat = json.loads(fetch(HUB + "catalog.json"))
-    remove_own_installers(cat, out)
     result = []
     for e in catalog_entries(cat, ids):
         data = local_package(out, e)
