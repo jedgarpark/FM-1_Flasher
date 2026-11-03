@@ -129,14 +129,31 @@ CircuitPython accept.
       BMPs. One hard fault into safe mode right after WiFi credentials were
       first added to `settings.toml`; it didn't recur after a reset.
 
-## Phase 1: Port
+## Phase 1: Port (done)
 
-- [ ] Split the board-specific parts of `lib/fm1ui/device.py` into one
-      module per board; `fm1proto`, `fm1update` and `fm1usb` unchanged.
-- [ ] Layout sizes in one place, so the screens work at 320x240;
-      `ui_sim.py` at that size.
-- [ ] Relax the RAM workarounds on this board only.
-- [ ] `deploy.py --board metro-p4`; a 320x240 splash.
+On the Metro from the touchscreen (logs/metro-p4-ui-20261102b.log): V15 →
+SLOOP in 50.5 s and SLOOP → V15 with factory voices in 46.2 s. After each
+reload the FM-1 answered the first identity query (v1 needs three). The
+user found the screens good on the 2.8" panel.
+
+- [x] Board-specific parts: `fm1ui/metro_p4.py` (ILI9341 display, FT6206
+      touch, SDIO card, USB host, splash). `fm1ui.device` takes them over v1's
+      when `board.board_id` is the Metro's, so v1 never loads them.
+      `fm1proto`, `fm1update` and `fm1usb` are shared (`fm1usb.CLEAR_HALT` on).
+- [x] Layouts: every size and position in `fm1ui/layout.py`, chosen by the
+      display's size. v1's 480x320 is unchanged (all 11 simulator screens
+      pixel-identical before and after). 320x240: no header title, 3x2 cards
+      of 100x82 with 40 px pictures (`ui.shrink` halves the 80 px thumbnail),
+      12 names a page in the text list, the 80 px picture on the details
+      screen, notes that wrap to two lines. `ui_sim.py --size 320x240`.
+- [ ] Relax v1's RAM workarounds on the Metro (16 MB free): not needed so
+      far; the install still goes through a reload, which is harmless.
+- [x] `deploy.py` reads the board from `boot_out.txt` (`--board` overrides) and
+      writes its splash; `make_splash.py --size 320x240` →
+      `art/splash_text_320.png`. Deploy with the Metro build's mpy-cross
+      (`ref/cp-metro-p4/mpy-cross/build/mpy-cross`); the Metro also needs
+      adafruit_ili9341, adafruit_focaltouch, adafruit_bus_device and
+      adafruit_usb_host_descriptors from the bundle.
 
 ## Phase 2: Update firmwares on the device
 
