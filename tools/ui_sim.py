@@ -10,7 +10,7 @@ Needs a venv with adafruit-blinka-displayio, adafruit-circuitpython-display-text
 adafruit-circuitpython-bitmap-font, Pillow and (for the window) pygame.
 The FM-1 is faked (--identity) and installs only animate the progress screen.
 
-Script steps (--do, in order): "tap X,Y", "press X,Y" (touch down, held), "swipe DX", "shot FILE.png",
+Script steps (--do, in order): "drag DX[,STEPS]" (drag and let go; Metro list), "hold DX", "tap X,Y", "press X,Y" (touch down, held), "swipe DX", "shot FILE.png",
 "identity ID" (or "identity none": unplugged), "connect", "phase NAME PCT", "wait", "found",
 "finish ok [MSG]", "finish fail MSG", "steps N" (run the loop N times), "until MODE" (run the
 loop until the Update screen reaches plan, run, done or error; "until Pictures" also works,
@@ -251,8 +251,18 @@ class HubNet:
                 yield data
 
 
+def home_screen(app):
+    """The list as the device has it: with Update (--hub) at 320x240, the
+    Metro's, which scrolls when Settings > Scroll pages is on."""
+    from fm1ui.layout import L
+    if app.updater is not None and L.SCROLL:
+        from fm1ui import flat
+        return flat.list_screen(app)
+    return S.ListScreen(app)
+
+
 def run_script(app, touch, steps):
-    app.push(S.ListScreen(app))
+    app.push(home_screen(app))
     for step in steps:
         cmd, _, arg = step.partition(" ")
         screen = app.stack[-1]
@@ -266,6 +276,25 @@ def run_script(app, touch, steps):
             app.step()
         elif cmd == "swipe":
             touch.queue.append(("swipe", int(arg)))
+            app.step()
+        elif cmd == "drag":  # "drag DX" or "drag DX,STEPS": a finger dragged DX px, then let go
+            dx, _, n = arg.partition(",")
+            dx, n = int(dx), int(n or 8)
+            touch.queue.append(("down", 160, 120))
+            app.step()
+            for i in range(1, n + 1):
+                touch.queue.append(("drag", dx * i // n, 160, 120))
+                app.step()
+                time.sleep(0.03)
+            touch.queue.append(("up",))
+            app.step()
+        elif cmd == "release":  # let go after "hold"
+            touch.queue.append(("up",))
+            app.step()
+        elif cmd == "hold":  # "hold DX": drag DX px and keep the finger down (for a shot mid-drag)
+            touch.queue.append(("down", 160, 120))
+            app.step()
+            touch.queue.append(("drag", int(arg), 160, 120))
             app.step()
         elif cmd == "shot":
             app.display.image.save(arg)
@@ -357,7 +386,7 @@ def run_window(app, scale, identity):
         pygame.display.flip()
 
     app.display.on_refresh = blit
-    app.push(S.ListScreen(app))
+    app.push(home_screen(app))
     down = False
     while True:
         for ev in pygame.event.get():

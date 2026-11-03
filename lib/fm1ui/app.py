@@ -162,6 +162,13 @@ class App:
         if ev:
             if ev[0] == "down":
                 self.press(screen, ev[1], ev[2])
+            elif ev[0] == "drag":  # only screens that scroll (fm1ui.flat) take these
+                if hasattr(screen, "drag"):
+                    self.unpress()
+                    screen.drag(ev[1], ev[2], ev[3])
+            elif getattr(screen, "dragging", False):  # the finger let go after a drag
+                screen.drop()
+                self.unpress()
             else:  # the touch ended: act with the element still lit, then let go
                 if ev[0] == "tap":
                     screen.tap(ev[1], ev[2])
@@ -201,17 +208,27 @@ class Gestures:
 
     SWIPE_PX = 60
     TAP_PX = 30  # a fingertip rolls 20-30 px on a firm tap
+    DRAG_PX = 12  # sideways this far, a drag starts: ("drag", dx, x0, y0) as it moves
 
     def __init__(self):
         self.start = None
         self.last = None
+        self.dragging = False
         self.events = []
 
     def sample(self, point):
         if point is not None:
             if self.start is None:
                 self.start = point
+                self.dragging = False
                 self.events.append(("down", point[0], point[1]))
+            elif point != self.last:
+                dx, dy = point[0] - self.start[0], point[1] - self.start[1]
+                if self.dragging or (abs(dx) >= self.DRAG_PX and abs(dx) > abs(dy)):
+                    self.dragging = True
+                    if self.events and self.events[-1][0] == "drag":
+                        self.events.pop()  # only the latest position matters
+                    self.events.append(("drag", dx, self.start[0], self.start[1]))
             self.last = point
             return
         if self.start is None:
