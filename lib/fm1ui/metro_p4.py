@@ -112,6 +112,64 @@ def mount_sd(spi):
         return False
 
 
+class Network:
+    """WiFi for Update firmwares (fm1ui.update), with the credentials
+    CircuitPython itself uses, from settings.toml. CircuitPython usually has
+    WiFi up already by then (its web workflow connects at start)."""
+
+    def __init__(self):
+        self.http = None
+
+    def connect(self):
+        """None when connected, else what to tell the user."""
+        import os
+        import wifi
+        if not wifi.radio.connected:
+            ssid = os.getenv("CIRCUITPY_WIFI_SSID")
+            if not ssid:
+                return ("No WiFi set up. Add CIRCUITPY_WIFI_SSID and CIRCUITPY_WIFI_PASSWORD "
+                        "to settings.toml on CIRCUITPY.")
+            try:
+                wifi.radio.connect(ssid, os.getenv("CIRCUITPY_WIFI_PASSWORD") or "", timeout=20)
+            except (ConnectionError, OSError) as e:
+                return "Couldn't join WiFi %s (%s)." % (ssid, str(e) or repr(e))
+        if self.http is None:
+            import adafruit_connection_manager as cm
+            import adafruit_requests
+            pool = cm.get_radio_socketpool(wifi.radio)
+            self.http = adafruit_requests.Session(pool, cm.get_radio_ssl_context(wifi.radio))
+        return None
+
+    def _get(self, url):
+        r = self.http.get(url, headers={"User-Agent": "FM-1_Flasher"}, timeout=30)
+        if r.status_code != 200:
+            r.close()
+            raise OSError("HTTP %d for %s" % (r.status_code, url.rsplit("/", 1)[-1]))
+        return r
+
+    def get(self, url):
+        r = self._get(url)
+        try:
+            return r.content
+        finally:
+            r.close()
+
+    def get_json(self, url):
+        r = self._get(url)
+        try:
+            return r.json()
+        finally:
+            r.close()
+
+    def stream(self, url, chunk=8192):
+        r = self._get(url)
+        try:
+            for data in r.iter_content(chunk_size=chunk):
+                yield data
+        finally:
+            r.close()
+
+
 class Touch:
     """FT6206 polled into taps and swipes, in display coordinates."""
 

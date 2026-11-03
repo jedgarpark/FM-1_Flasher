@@ -11,6 +11,8 @@ probe     .connect() -> the FM-1's identity, or None if none answered
           .present() -> is the connected FM-1 still attached
 installer .start(app, entry): run, or arrange to run, the install;
           optional .finish(app) after the user dismisses the result
+updater   None, or the network fm1ui.update uses (boards with WiFi): the
+          list then offers Update firmwares
 """
 import gc
 import time
@@ -26,7 +28,7 @@ from fm1ui import ui
 class App:
     PROBE_EVERY_S = 2
 
-    def __init__(self, display, touch, root, state, probe=None, installer=None, pictures=True):
+    def __init__(self, display, touch, root, state, probe=None, installer=None, pictures=True, updater=None):
         # The picture pool and the fonts are made first and kept, while the heap
         # is still in one piece: made and freed per screen, their 3-8 KB blocks
         # soon no longer fit between the small objects screens leave behind.
@@ -41,9 +43,8 @@ class App:
         self.state = state
         self.probe = probe
         self.installer = installer
-        self.index = C.Index(root + "/index.txt")
-        self.updated = self.index.updated
-        self.tags = self.index.tags()  # for the list's tag filter, most used first
+        self.updater = updater
+        self.reload_index()
         self.identity = None  # set by connect()
         self.connecting = False
         self.connect_failed = False
@@ -53,6 +54,12 @@ class App:
         self.pressed = None  # (screen, its group, pressed group, release token)
 
     # -- data -----------------------------------------------------------------
+
+    def reload_index(self):
+        """Read index.txt again (after an update changed the card)."""
+        self.index = C.Index(self.root + "/index.txt")
+        self.updated = self.index.updated
+        self.tags = self.index.tags()  # for the list's tag filter, most used first
 
     def path(self, slug, name):
         return "%s/%s/%s" % (self.root, slug, name)
@@ -162,7 +169,7 @@ class App:
                     screen.swipe(ev[1])
                 self.unpress()
         now = time.monotonic()
-        if not isinstance(self.stack[-1], S.ProgressScreen):
+        if not isinstance(self.stack[-1], S.ProgressScreen):  # the installer has the FM-1
             self.poll_fm1(now)
         self.stack[-1].tick(now)
 

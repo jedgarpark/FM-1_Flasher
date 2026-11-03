@@ -50,6 +50,7 @@ def _big():
     VIEW_ICON_DY=10,
     PAGE_Y=296,
     PAGE_X=None,  # "Page N of M" centre; None: the screen's
+    UPDATE_BTN=None,  # Update firmwares (boards with WiFi), or None
     DATE_Y=311,  # catalogue date, or None
     FOOTER_LEFT_X=160,  # footer taps left of this: prev arrow or view toggle
     NEXT_ZONE_W=140,  # footer taps this close to the right edge: next arrow
@@ -114,9 +115,10 @@ def _small():
     VIEW=(64, 208, 60, 28),
     VIEW_ICON_DY=8,
     PAGE_Y=222,
-    PAGE_X=193,  # between the view toggle and the next arrow
+    PAGE_X=193,  # between the view toggle and the next arrow (without Update)
+    UPDATE_BTN=(140, 208, 72, 28),
     DATE_Y=None,
-    FOOTER_LEFT_X=140,
+    FOOTER_LEFT_X=132,
     NEXT_ZONE_W=100,
     BACK_BTN=(6, 6, 64, 26),
     HEART_BTN=(270, 6, 44, 26),

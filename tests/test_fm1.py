@@ -517,15 +517,9 @@ class Catalog(unittest.TestCase):
         with self.assertRaises(SystemExit):
             make_sd.catalog_entries(self.CAT, ["fizz"])
 
-    def test_own_installers_are_removed_from_the_card(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as out:
-            for slug, cid in (("fizz", "fizz"), ("sloop", "sloop")):
-                os.makedirs(os.path.join(out, "firmware", slug))
-                with open(os.path.join(out, "firmware", slug, "meta.json"), "w") as f:
-                    json.dump({"catalog_id": cid}, f)
-            make_sd.remove_own_installers(self.CAT, out)
-            self.assertEqual(os.listdir(os.path.join(out, "firmware")), ["sloop"])
+    def test_nothing_is_removed_from_the_card(self):
+        # A firmware the hub moves to its own installer stays on the card.
+        self.assertFalse(hasattr(make_sd, "remove_own_installers"))
 
 
 @unittest.skipUnless(PKGS, "set FM1_TEST_PKGS to a folder of community .fwsc files")

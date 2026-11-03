@@ -14,7 +14,8 @@ name on the board is removed, so the .mpy is the one imported.
 
 The board (feather or metro-p4) comes from the drive's boot_out.txt; --board
 overrides it. The Metro also needs adafruit_ili9341, adafruit_focaltouch,
-adafruit_bus_device and adafruit_usb_host_descriptors from the bundle in lib/.
+adafruit_bus_device, adafruit_usb_host_descriptors, adafruit_requests and
+adafruit_connection_manager from the bundle in lib/.
 """
 import argparse
 import glob
@@ -27,6 +28,7 @@ from io import BytesIO
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FM1_LIBS = ("fm1proto.py", "fm1update.py", "fm1usb.py")
+BOARD_LIBS = {"metro-p4": ("fm1catalog.py", "fm1pic.py")}  # Update firmwares over WiFi
 VENDOR = ()  # (package, (files...)) from the venv, compiled; none needed now
 VENDOR_MODULES = ()
 # Already on the board as .py (from the bundle): compiled in place to save RAM.
@@ -129,7 +131,7 @@ def main():
 
     lib = os.path.join(args.drive, "lib")
     n = 0
-    for name in FM1_LIBS:
+    for name in FM1_LIBS + BOARD_LIBS.get(board, ()):
         compile_to(args.mpy_cross, os.path.join(ROOT, "lib", name), lib)
         n += 1
     for src in sorted(glob.glob(os.path.join(ROOT, "lib", "fm1ui", "*.py"))):
