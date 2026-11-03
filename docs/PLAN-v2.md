@@ -169,7 +169,11 @@ user found the screens good on the 2.8" panel.
       leaves a working card.
 - [x] WiFi credentials from `settings.toml`. Offer to fill an empty card at
       first start (tested in the simulator, not yet on the Metro).
-- [ ] On-screen WiFi credential entry.
+- [x] On-screen WiFi entry: Settings (the gear on the list) > WiFi scans,
+      takes the password on an on-screen keyboard and keeps up to 8
+      networks in NVM, not on the card; Update joins the most recently used
+      one in range. Tested on the Metro, joining a second network elsewhere
+      on battery (3 November 2026).
 
 Result (2 to 3 November 2026): the Metro brought a card made on 29 October
 up to date over WiFi, 31 new and 45 updated firmwares (46.4 MB), about 9 s
