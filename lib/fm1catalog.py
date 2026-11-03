@@ -294,7 +294,7 @@ def download(root, e, stream, chunk=None):
             chunks.close()  # a stopped download: let the connection go
     if n != e["size"] or _hex(h.digest()) != e["sha256"]:
         os.remove(part)
-        raise ValueError("%s: the download doesn't match the catalogue" % e["id"])
+        raise ValueError("%s: the download doesn't match the catalog" % e["id"])
     try:
         with open(part, "rb") as f:
             meta = finish(meta_for(e), f)

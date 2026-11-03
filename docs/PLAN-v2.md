@@ -198,6 +198,15 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       through the host port's boost.
 - [ ] Soak tests across many firmwares, a Learn Guide section, a release.
 
+## To look into
+
+- [ ] Sort the lists: A-Z (as now), New (newest on the hub first) and
+      Recently updated. The hub's catalogue has both dates for each firmware
+      (`added` and `date`), but `index.txt` doesn't carry them yet:
+      `fm1catalog.write_index` (the device and `make_sd.py`) would add them.
+      A sort button beside the tag and favourites filters, kept with the
+      list view in the state.
+
 ## Upstream and the hub
 
 - [ ] After the USB host spike: ask for a Metro P4 board-level enumeration

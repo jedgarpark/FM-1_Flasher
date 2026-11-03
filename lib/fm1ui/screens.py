@@ -204,7 +204,7 @@ class ListScreen(Screen):
         g.append(ui.text(ui.SMALL, page, ui.FG, px, L.PAGE_Y, (0.5, 0.5)))
         self.footer.append((self.next, "next", self.arrows[1]))
         if app.updated and L.DATE_Y:
-            g.append(ui.text(ui.SMALL, "Catalogue " + C.nice_date(app.updated), ui.DIM, W // 2, L.DATE_Y, (0.5, 0.5)))
+            g.append(ui.text(ui.SMALL, "Catalog " + C.nice_date(app.updated), ui.DIM, W // 2, L.DATE_Y, (0.5, 0.5)))
         self.pages = pages
         self.group = g
         return g
