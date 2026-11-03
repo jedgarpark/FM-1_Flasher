@@ -18,6 +18,7 @@ import time
 import displayio
 
 from fm1ui import catalog as C
+from fm1ui import layout
 from fm1ui import screens as S
 from fm1ui import ui
 
@@ -29,6 +30,7 @@ class App:
         # The picture pool and the fonts are made first and kept, while the heap
         # is still in one piece: made and freed per screen, their 3-8 KB blocks
         # soon no longer fit between the small objects screens leave behind.
+        layout.use(display.width, display.height)
         if pictures:  # not while installing: the installer wants the RAM
             ui.slots()
         for name in (ui.TITLE, ui.NAME, ui.BODY, ui.SMALL):

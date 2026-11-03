@@ -4,12 +4,17 @@
 
   .venv/bin/python tools/deploy.py --mpy-cross ref/circuitpython/mpy-cross/build/mpy-cross
 
-Copies code.py, fonts/ (.fmf), the splash (art/splash_text.png as a 16-colour
-splash.bmp, needs Pillow), lib/fm1ui and the fm1 libraries, compiles
+Copies code.py, fonts/ (.fmf), the splash (art/splash_text.png, or
+art/splash_text_320.png on the Metro ESP32-P4, as a 16-colour splash.bmp,
+needs Pillow), lib/fm1ui and the fm1 libraries, compiles
 the board's adafruit_hx8357/ft5336/register .py files in place, and sets
 CIRCUITPY_SDCARD_USB = false in settings.toml (takes effect after a reset). The
 mpy-cross must match the board's CircuitPython version. A .py of the same
 name on the board is removed, so the .mpy is the one imported.
+
+The board (feather or metro-p4) comes from the drive's boot_out.txt; --board
+overrides it. The Metro also needs adafruit_ili9341, adafruit_focaltouch,
+adafruit_bus_device and adafruit_usb_host_descriptors from the bundle in lib/.
 """
 import argparse
 import glob
@@ -29,20 +34,34 @@ BOARD_PY = ("adafruit_hx8357.py", "adafruit_ft5336.py", "adafruit_register/i2c_b
 # Keeps the computer from reading /sd over USB while the flasher uses it: the two
 # collide on the SPI bus and FatFs gets stale sectors (DEVNOTES §6.18).
 SETTINGS = {"CIRCUITPY_SDCARD_USB": "false"}
-SPLASH = ("art/splash_text.png", "splash.bmp")  # 480x320 (tools/make_splash.py); fm1ui.device.SPLASH
+SPLASH = {"feather": "art/splash_text.png",  # 480x320 (tools/make_splash.py); fm1ui.device.SPLASH
+          "metro-p4": "art/splash_text_320.png"}  # 320x240
+BOARD_IDS = {"adafruit_metro_esp32p4": "metro-p4"}  # anything else: feather
 
 
-def write_splash(drive):
+def detect_board(drive):
+    """feather or metro-p4, from the drive's boot_out.txt."""
+    try:
+        with open(os.path.join(drive, "boot_out.txt")) as f:
+            for line in f:
+                if line.startswith("Board ID:"):
+                    return BOARD_IDS.get(line.split(":", 1)[1].strip(), "feather")
+    except OSError:
+        pass
+    return "feather"
+
+
+def write_splash(drive, board="feather"):
     """Convert the splash PNG to an 8-bit BMP with 16 colours, which OnDiskBitmap
     reads (154 KB; Pillow writes no 4-bit BMP). Written only when it changed,
     so the board doesn't reload."""
     from PIL import Image
-    im = Image.open(os.path.join(ROOT, SPLASH[0])).convert("RGB")
+    im = Image.open(os.path.join(ROOT, SPLASH[board])).convert("RGB")
     im = im.quantize(16, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     buf = BytesIO()
     im.save(buf, "BMP")
     data = buf.getvalue()
-    dst = os.path.join(drive, SPLASH[1])
+    dst = os.path.join(drive, "splash.bmp")
     try:
         with open(dst, "rb") as f:
             if f.read() == data:
@@ -104,7 +123,9 @@ def main():
     ap.add_argument("--drive", default="/Volumes/CIRCUITPY")
     ap.add_argument("--mpy-cross", required=True)
     ap.add_argument("--site-packages", help="where VENDOR libraries come from")
+    ap.add_argument("--board", choices=sorted(SPLASH), help="default: from the drive's boot_out.txt")
     args = ap.parse_args()
+    board = args.board or detect_board(args.drive)
 
     lib = os.path.join(args.drive, "lib")
     n = 0
@@ -136,11 +157,11 @@ def main():
         dst = os.path.join(fonts, os.path.basename(f))
         if not (os.path.exists(dst) and open(dst, "rb").read() == open(f, "rb").read()):
             shutil.copy(f, fonts)
-    write_splash(args.drive)
+    write_splash(args.drive, board)
     update_settings(args.drive)
     shutil.copy(os.path.join(ROOT, "device", "code.py"), os.path.join(args.drive, "code.py"))
     os.sync()
-    print("deployed %d modules, fonts, the splash, settings.toml and code.py to %s" % (n, args.drive))
+    print("deployed %d modules, fonts, the splash, settings.toml and code.py to %s (%s)" % (n, args.drive, board))
 
 
 if __name__ == "__main__":

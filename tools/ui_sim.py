@@ -3,6 +3,7 @@
 """Run the flasher UI on the desktop with Blinka displayio.
 
   .venv/bin/python tools/ui_sim.py --root sd_out/full/firmware            # window; click and drag
+  .venv/bin/python tools/ui_sim.py --size 320x240                          # the Metro ESP32-P4's 2.8" screen
   .venv/bin/python tools/ui_sim.py --root ... --do "shot list.png" --do "tap 60,100" --do "shot detail.png"
 
 Needs a venv with adafruit-blinka-displayio, adafruit-circuitpython-display-text,
@@ -194,6 +195,7 @@ def run_script(app, touch, steps):
         elif cmd == "phase":
             name, _, pct = arg.rpartition(" ")
             screen.phase(name, int(pct))
+            screen.redraw(force=True)  # phase() redraws at most once a second
         elif cmd == "wait":
             screen.wait("app")
         elif cmd == "found":
@@ -211,7 +213,8 @@ KEYS = """keys: f plug/unplug the FM-1, x fail the install, s stall the FM-1's r
 def run_window(app, scale, identity):
     import pygame
     pygame.init()
-    win = pygame.display.set_mode((480 * scale, 320 * scale))
+    w, h = app.display.width, app.display.height
+    win = pygame.display.set_mode((w * scale, h * scale))
     installer = app.installer
     last = [app.probe.ident or identity]  # what the FM-1 answers as when plugged back in
 
@@ -249,7 +252,7 @@ def run_window(app, scale, identity):
     def blit(image):
         surf = pygame.image.frombuffer(image.tobytes(), image.size, "RGB")
         if scale != 1:
-            surf = pygame.transform.scale(surf, (480 * scale, 320 * scale))
+            surf = pygame.transform.scale(surf, (w * scale, h * scale))
         win.blit(surf, (0, 0))
         pygame.display.flip()
 
@@ -281,12 +284,14 @@ def main():
     ap.add_argument("--identity", default="FM-1_015", help="what the fake FM-1 answers to Connect, or 'none'")
     ap.add_argument("--do", action="append", default=[], help="script step (headless)")
     ap.add_argument("--scale", type=int, default=2, help="window zoom")
+    ap.add_argument("--size", default="480x320", help="display size: 480x320 (v1) or 320x240 (Metro ESP32-P4)")
     args = ap.parse_args()
 
     state = C.State(args.state or os.path.join(os.path.dirname(args.root.rstrip("/")), "flasher-sim.json"))
     touch = ScriptTouch()
     probe = FakeProbe(None if args.identity == "none" else args.identity)
-    app = A.App(SimDisplay(), touch, args.root, state, probe, FakeInstaller(animate=not args.do))
+    width, _, height = args.size.partition("x")
+    app = A.App(SimDisplay(int(width), int(height)), touch, args.root, state, probe, FakeInstaller(animate=not args.do))
     if args.do:
         run_script(app, touch, args.do)
     else:

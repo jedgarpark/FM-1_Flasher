@@ -12,6 +12,15 @@ import time
 import adafruit_usb_host_descriptors as D
 import usb.core
 
+# Send CLEAR_FEATURE(ENDPOINT_HALT) to both MIDI endpoints when a transport
+# opens them. The FM-1 stays enumerated through a soft reload, but the host's
+# endpoints restart at DATA0 while the FM-1's data toggles don't, so the first
+# query and the first reply were dropped as duplicates (DEVNOTES 6.9). The
+# clear resets the device's toggles to DATA0 too. Best effort: the stock V15
+# loader (ota-FM-1_015) stalls the request. Off by default until tested
+# on the Feather; the Metro ESP32-P4 sets it (docs/PLAN-v2.md).
+CLEAR_HALT = False
+
 # Code index numbers (USB MIDI 1.0, table 4-1)
 CIN_SYSEX = 0x4  # SysEx start or continue, 3 bytes
 CIN_END1 = 0x5  # SysEx ends with 1 byte (or a single-byte system common)
@@ -95,6 +104,12 @@ class USBMidiTransport:
             device.detach_kernel_driver(self.iface)
         except (usb.core.USBError, NotImplementedError):
             pass
+        if CLEAR_HALT:
+            for ep in (self.out_ep, self.in_ep):
+                try:
+                    device.ctrl_transfer(0x02, 1, 0, ep, None, 1000)  # CLEAR_FEATURE(ENDPOINT_HALT)
+                except usb.core.USBError:
+                    pass  # the stock V15 loader stalls it ("Pipe error"); it doesn't need it
 
     @property
     def lost(self):
