@@ -51,9 +51,23 @@ def log(direction, msg):
 t0 = time.monotonic()
 clock = U.Clock()
 for t in fm1usb.finder(log)():
+    # Data-toggle guess (DEVNOTES 6.9): the FM-1 stays enumerated through a
+    # soft reboot, but the host's endpoints restart at DATA0. CLEAR_FEATURE
+    # (ENDPOINT_HALT) resets the device's toggle for that endpoint to DATA0.
+    for ep in (t.out_ep, t.in_ep):
+        try:
+            t.device.ctrl_transfer(0x02, 1, 0, ep, None, 1000)
+            print("clear halt 0x%02x: ok" % ep)
+        except Exception as e:
+            print("clear halt 0x%02x: %r" % (ep, e))
     link = U.Link(t, clock)
     try:
-        print("identity (cmd 17):", P.identity(link.query(P.CMD_IDENTITY, ms=750)))
+        for attempt in range(3):  # after a soft reboot the first query has been lost
+            try:
+                print("identity (cmd 17), try %d:" % attempt, P.identity(link.query(P.CMD_IDENTITY, ms=750)))
+                break
+            except U.FM1Timeout:
+                print("identity (cmd 17), try %d: no reply" % attempt)
         try:
             print("capability (cmd 49):", P.capability(link.query(P.CMD_CAPABILITY)))
         except U.FM1Timeout:

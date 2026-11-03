@@ -121,12 +121,17 @@ class Updater:
             link.slow_down()
         try:
             reply = None
-            for attempt in range(2):
+            # Three tries: when the FM-1 stayed enumerated through a soft reload,
+            # the host's data toggles restart and the FM-1's don't. The first
+            # query is dropped by the FM-1 and the second reply by the host; the
+            # third gets through (DEVNOTES 6.9). The stock V15 loader refuses the
+            # CLEAR_FEATURE that would avoid this (fm1usb.CLEAR_HALT).
+            for attempt in range(3):
                 try:
                     reply = link.query(P.CMD_IDENTITY, ms=750)
                     break
                 except FM1Timeout:
-                    if attempt or link.lost:
+                    if attempt == 2 or link.lost:
                         raise
             return link, P.identity(reply)
         except Exception:

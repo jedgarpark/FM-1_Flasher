@@ -72,26 +72,47 @@ CircuitPython accept.
       full-screen refresh takes 65 ms. Touch is an FT6206 (`adafruit_focaltouch`,
       0x38, chip ID 0x06) reporting portrait: screen x = 319 - raw y,
       screen y = raw x.
-- [ ] USB host: **blocked by a USB host bug in this alpha port.**
-      - On the stock build the port works (a keyboard enumerated in 0.6 s)
-        but the FM-1 doesn't enumerate: the 288-byte buffer.
-      - With a 512-byte buffer (`ref/cp-metro-p4`, branch `fm1-metro-p4`,
-        one line in the board's `mpconfigboard.mk`) the FM-1 (V15,
-        `4c4a:c755`) enumerates in 0.2 s, and on a fresh connection the
-        identity query is answered in 1 ms (`device/metro_spike_usb_raw.py`).
-      - But a `read()` that times out isn't cancelled: TinyUSB's DWC2 host
-        `hcd_edpt_abort_xfer()` only requests a channel halt for a running
-        bulk transfer and returns true. The old IN transfer stays live and
-        takes the reply to the next query; later writes return its length
-        ("56 of 16 bytes") and new reads never complete, until a replug.
-        CircuitPython has also freed that read's buffer by then
-        (`shared-module/usb/core/Device.c`), so a late reply may land in
-        freed memory. Upstream TinyUSB (to ed8adb054, Oct 23) has no fix.
-      - Host DMA off (`CFG_TUH_DWC2_DMA_ENABLE=0`, tag
-        `fm1-metro-nodma-experiment`): a soft reboot with the FM-1 attached
-        hard-faults into safe mode. Not a workaround.
-      - The installer needs read timeouts (lost replies, loader retries), so
-        this has to be fixed in TinyUSB before v2 can install.
+- [x] USB host: **passes with a custom build** (`ref/cp-metro-p4`, branch
+      `fm1-metro-p4`: upstream `main` + a 512-byte enumeration buffer + a
+      TinyUSB fix). From the REPL (`device/metro_install.py`, 64-byte writes),
+      with no lost replies or resends:
+
+      | Install | Metro ESP32-P4 | v1 (Feather) |
+      |---|---|---|
+      | V15 → SLOOP | 52.2 s | 70-84 s |
+      | SLOOP → V15 with factory voices | 49.4 s | 73-85 s |
+
+      What it took:
+      - **Enumeration buffer.** On the stock build (288 bytes) the FM-1
+        doesn't enumerate; a keyboard does. With 512 the FM-1 (V15,
+        `4c4a:c755`) enumerates in 0.2 s.
+      - **TinyUSB: cancelling a running bulk IN.** With host DMA, a
+        `read()` that timed out wasn't cancelled: `hcd_edpt_abort_xfer()`
+        set channel disable and returned, and the halt arrived with NAK set,
+        so `handle_channel_in_dma()` re-armed the channel. The stale read took
+        the reply to the next query, later writes returned its length
+        ("56 of 16 bytes") and reads never completed until a replug; and
+        CircuitPython had freed the read's buffer. Fix (TinyUSB branch
+        `fm1-dwc2-abort`, 943d479be): mark a non-periodic DMA channel
+        `aborting`, as for periodic ones, so `handle_channel_irq()` retires it
+        at its halt without a completion event, and wait for that halt before
+        returning. Tested: 5 query/timeout rounds all answered, 800 1-20 ms
+        read timeouts in a row with no error. Upstream TinyUSB has no fix yet.
+        Host DMA off instead hard-faults on a soft reboot (tag
+        `fm1-metro-nodma-experiment`).
+      - **Data toggles (also v1, DEVNOTES §6.9).** The FM-1 stays enumerated
+        through a soft reload; the host's endpoints restart at DATA0 and the
+        FM-1's don't, so the first query and the first reply are dropped
+        (`nnYYY` on each reopen). `fm1usb.CLEAR_HALT` sends
+        CLEAR_FEATURE(ENDPOINT_HALT) to both endpoints when a transport opens,
+        which fixes it for the apps and the SLOOP loader; the stock V15 loader
+        stalls the request ("Pipe error"), so it's best effort, and
+        `Updater._open()` now tries identity three times, which covers the
+        double mismatch. `CLEAR_HALT` is on for the Metro only until it's
+        tested on the Feather.
+      - **Open question:** once, two `connect()` calls in a row failed with
+        only two identity queries sent, then it didn't happen again in
+        several dozen reopens. Not explained.
       - Cutting the host port's 5 V doesn't make a battery-powered FM-1
         disconnect; a clean test needs a cable replug.
 - [x] SD card (`device/metro_spike_net.py`): the board doesn't mount it;
