@@ -220,7 +220,7 @@ class UpdateScreen:
             self._buttons("Back", None)
         elif m == "plan":
             p = self.plan
-            self.sub.set("Catalogue " + C.nice_date(p.updated_at))
+            self.sub.set("Catalog " + C.nice_date(p.updated_at))
             self._set_note(" ")
             self.info.set(" ")
             if p.downloads or self.pics:
@@ -317,7 +317,7 @@ class UpdateScreen:
         app = self.app
         err = app.updater.connect()
         if err is None:
-            self.sub.set("Reading the hub's catalogue...")
+            self.sub.set("Reading the hub's catalog...")
             app.refresh()
             try:
                 cat = app.updater.get_json(K.HUB + "catalog.json")
@@ -325,7 +325,7 @@ class UpdateScreen:
                 cat = None
                 self.pics = picture_list(app.root, self.plan)
             except (OSError, ValueError, KeyError) as e:
-                err = "Couldn't read the hub's catalogue (%s)." % (str(e) or repr(e))
+                err = "Couldn't read the hub's catalog (%s)." % (str(e) or repr(e))
         self.message = err or ""
         self.mode = "error" if err else "plan"
         self._show()
