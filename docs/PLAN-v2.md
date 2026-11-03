@@ -72,12 +72,28 @@ CircuitPython accept.
       full-screen refresh takes 65 ms. Touch is an FT6206 (`adafruit_focaltouch`,
       0x38, chip ID 0x06) reporting portrait: screen x = 319 - raw y,
       screen y = raw x.
-- [ ] USB host: the port works (a keyboard enumerated in 0.6 s), but on the
-      stock build the FM-1 doesn't enumerate in 20 s, as expected with the
-      288-byte buffer. Next: a build with a 512-byte buffer
-      (`ref/cp-metro-p4`, branch `fm1-metro-p4`); identity query; a V15 → SLOOP → V15 round trip
-      with `fm1usb`/`fm1update` on short and long cables, timed against
-      v1's ~70 s.
+- [ ] USB host: **blocked by a USB host bug in this alpha port.**
+      - On the stock build the port works (a keyboard enumerated in 0.6 s)
+        but the FM-1 doesn't enumerate: the 288-byte buffer.
+      - With a 512-byte buffer (`ref/cp-metro-p4`, branch `fm1-metro-p4`,
+        one line in the board's `mpconfigboard.mk`) the FM-1 (V15,
+        `4c4a:c755`) enumerates in 0.2 s, and on a fresh connection the
+        identity query is answered in 1 ms (`device/metro_spike_usb_raw.py`).
+      - But a `read()` that times out isn't cancelled: TinyUSB's DWC2 host
+        `hcd_edpt_abort_xfer()` only requests a channel halt for a running
+        bulk transfer and returns true. The old IN transfer stays live and
+        takes the reply to the next query; later writes return its length
+        ("56 of 16 bytes") and new reads never complete, until a replug.
+        CircuitPython has also freed that read's buffer by then
+        (`shared-module/usb/core/Device.c`), so a late reply may land in
+        freed memory. Upstream TinyUSB (to ed8adb054, Oct 23) has no fix.
+      - Host DMA off (`CFG_TUH_DWC2_DMA_ENABLE=0`, tag
+        `fm1-metro-nodma-experiment`): a soft reboot with the FM-1 attached
+        hard-faults into safe mode. Not a workaround.
+      - The installer needs read timeouts (lost replies, loader retries), so
+        this has to be fixed in TinyUSB before v2 can install.
+      - Cutting the host port's 5 V doesn't make a battery-powered FM-1
+        disconnect; a clean test needs a cable replug.
 - [x] SD card (`device/metro_spike_net.py`): the board doesn't mount it;
       `sdioio.SDCard` (4-bit, 40 MHz) plus `storage.mount` does. 1 MB writes
       at 1.6-1.75 MB/s, reads at 6.9-7.7 MB/s. The full package checks on
