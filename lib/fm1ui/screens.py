@@ -181,8 +181,16 @@ class ListScreen(Screen):
             g.append(ui.triangle(bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left))
         self.view_g = self.view_toggle(as_list)
         g.append(self.view_g)
-        g.append(ui.text(ui.SMALL, "Page %d of %d" % (self.page + 1, pages), ui.FG, L.PAGE_X or W // 2, L.PAGE_Y,
-                         (0.5, 0.5)))
+        self.update_btn = None
+        if app.updater is not None and L.UPDATE_BTN:
+            self.update_btn = ui.Button("Update", *L.UPDATE_BTN, name=ui.SMALL)
+            g.append(self.update_btn.group)
+        if self.update_btn:  # "N/M" between Update and the next arrow
+            ux, _, uw, _ = L.UPDATE_BTN
+            page, px = "%d/%d" % (self.page + 1, pages), (ux + uw + L.NEXT[0]) // 2
+        else:
+            page, px = "Page %d of %d" % (self.page + 1, pages), L.PAGE_X or W // 2
+        g.append(ui.text(ui.SMALL, page, ui.FG, px, L.PAGE_Y, (0.5, 0.5)))
         if app.updated and L.DATE_Y:
             g.append(ui.text(ui.SMALL, "Catalogue " + C.nice_date(app.updated), ui.DIM, W // 2, L.DATE_Y, (0.5, 0.5)))
         self.pages = pages
@@ -293,7 +301,8 @@ class ListScreen(Screen):
         return x >= (self.tab_tag.rect[0] + self.tab_tag.rect[2] + self.tab_fav[0]) // 2
 
     def _zone(self, x, y):
-        """"connect", "tabs", "left" (prev arrow or view toggle), "next" or None."""
+        """"connect", "tabs", "left" (prev arrow or view toggle), "next",
+        "update" or None."""
         if y < L.GRID_Y - 2:
             if x >= L.CONNECT_ZONE_X:
                 return "connect"
@@ -303,6 +312,8 @@ class ListScreen(Screen):
             return "left"
         elif y >= self.next[1] - 8 and x >= L.W - L.NEXT_ZONE_W:
             return "next"
+        elif self.update_btn and y >= self.prev[1] - 8:
+            return "update"
         return None
 
     def target(self, x, y):
@@ -315,6 +326,8 @@ class ListScreen(Screen):
             return self.arrows[0] if self._prev_side(x) else self.view_g
         if zone == "next":
             return self.arrows[1]
+        if zone == "update":
+            return self.update_btn.group
         for e, card, heart, tile, g in self.cards:
             if _hit(heart, x, y):
                 return None  # the heart's own toggle is the feedback
@@ -340,6 +353,9 @@ class ListScreen(Screen):
                 self.set_view("grid" if x < L.VIEW[0] + L.VIEW[2] // 2 else "list")
         elif zone == "next":
             self.turn(1)
+        elif zone == "update":
+            from fm1ui.update import UpdateScreen
+            self.app.push(UpdateScreen(self.app))
         else:
             e, tile = self._card_at(x, y)
             if tile is not None:

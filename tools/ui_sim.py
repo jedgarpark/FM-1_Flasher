@@ -12,7 +12,13 @@ The FM-1 is faked (--identity) and installs only animate the progress screen.
 
 Script steps (--do, in order): "tap X,Y", "press X,Y" (touch down, held), "swipe DX", "shot FILE.png",
 "identity ID" (or "identity none": unplugged), "connect", "phase NAME PCT", "wait", "found",
-"finish ok [MSG]", "finish fail MSG".
+"finish ok [MSG]", "finish fail MSG", "steps N" (run the loop N times), "until MODE" (run the
+loop until the Update screen reaches plan, run, done or error; "until Pictures" also works,
+for the run's phase).
+
+--hub turns on Update firmwares with the real hub over this computer's network
+(--hub-only ID,ID,... shows the device a catalogue of just those firmwares).
+It writes to --root: use a copy.
 
 Window keys:
   f  plug or unplug the FM-1 (as --identity; then tap Connect FM-1)
@@ -167,6 +173,45 @@ class FakeInstaller:
         screen.tick = tick
 
 
+class HubNet:
+    """fm1ui.update's network, with urllib."""
+
+    def __init__(self, only=None):
+        self.only = only
+
+    def connect(self):
+        return None
+
+    def _open(self, url):
+        import urllib.request
+        return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "FM-1_Flasher ui_sim"}),
+                                      timeout=60)
+
+    def get(self, url):
+        try:
+            with self._open(url) as r:
+                return r.read()
+        except Exception as e:
+            raise OSError(str(e))
+
+    def get_json(self, url):
+        import json
+        cat = json.loads(self.get(url))
+        if self.only:
+            cat["firmwares"] = [e for e in cat["firmwares"] if e["id"] in self.only]
+            if "stock-v15" not in self.only:
+                cat.pop("stock", None)
+        return cat
+
+    def stream(self, url, chunk=8192):
+        with self._open(url) as r:
+            while True:
+                data = r.read(chunk)
+                if not data:
+                    break
+                yield data
+
+
 def run_script(app, touch, steps):
     app.push(S.ListScreen(app))
     for step in steps:
@@ -203,6 +248,22 @@ def run_script(app, touch, steps):
         elif cmd == "finish":
             ok, _, msg = arg.partition(" ")
             screen.finish(ok == "ok", msg)
+        elif cmd == "steps":
+            for _ in range(int(arg)):
+                app.step()
+        elif cmd == "until":
+            t = time.monotonic()
+            while time.monotonic() - t < 600:
+                s = app.stack[-1]
+                mode = getattr(s, "mode", None)
+                if mode == arg or (mode == "run" and s.phase.text == arg):
+                    break
+                app.step()
+            else:
+                sys.exit("timed out waiting for " + arg)
+            app.stack[-1].last_draw = 0
+            app.step()  # draw it
+            app.refresh()
         else:
             sys.exit("unknown step: " + step)
 
@@ -285,13 +346,17 @@ def main():
     ap.add_argument("--do", action="append", default=[], help="script step (headless)")
     ap.add_argument("--scale", type=int, default=2, help="window zoom")
     ap.add_argument("--size", default="480x320", help="display size: 480x320 (v1) or 320x240 (Metro ESP32-P4)")
+    ap.add_argument("--hub", action="store_true", help="Update firmwares from the real hub (writes to --root)")
+    ap.add_argument("--hub-only", help="with --hub: a catalogue of only these ids (comma-separated)")
     args = ap.parse_args()
 
     state = C.State(args.state or os.path.join(os.path.dirname(args.root.rstrip("/")), "flasher-sim.json"))
     touch = ScriptTouch()
     probe = FakeProbe(None if args.identity == "none" else args.identity)
     width, _, height = args.size.partition("x")
-    app = A.App(SimDisplay(int(width), int(height)), touch, args.root, state, probe, FakeInstaller(animate=not args.do))
+    net = HubNet(args.hub_only.split(",") if args.hub_only else None) if args.hub or args.hub_only else None
+    app = A.App(SimDisplay(int(width), int(height)), touch, args.root, state, probe, FakeInstaller(animate=not args.do),
+                updater=net)
     if args.do:
         run_script(app, touch, args.do)
     else:

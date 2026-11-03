@@ -44,12 +44,13 @@ import sys
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+import fm1catalog as K  # noqa: E402
 import fm1proto as P  # noqa: E402
 
 FIELDS = ("schema", "kind", "product", "family", "build_id", "bytes", "sha256", "loader_sha256",
           "release_version", "profile")
 EXTRA = ("name", "author", "version", "source_url", "license", "notes")
-HUB = "https://thefirmwarehub.com/"
+HUB = K.HUB
 UA = {"User-Agent": "FM-1_Flasher make_sd.py"}
 
 
@@ -58,30 +59,16 @@ def fetch(url):
         return r.read()
 
 
-def own_installer(e):
-    """True for a firmware the hub sends to its own installer ("Install on its
-    page"): it writes data the package doesn't carry, so installing just the
-    package leaves it asking for that data (FIZZ)."""
-    return bool(e.get("install"))
+own_installer = K.own_installer
 
 
 def catalog_entries(cat, ids):
     """The catalogue's firmwares (all, or only `ids`), with stock V15 first.
     Firmwares with their own installer are left out."""
-    entries = [e for e in cat["firmwares"] if e.get("pkg") and not own_installer(e)]
-    stock = cat.get("stock")
-    if stock and stock.get("pkg"):
-        entries.insert(0, dict(stock, id="stock-v15", name="M-VAVE V15", author="M-VAVE", version="V15",
-                               kind="official", lic="Apache-2.0",
-                               what="The FM-1's official firmware, with its factory voices restored "
-                                    "after the install."))
-    if ids:
-        known = {e["id"] for e in entries}
-        missing = [i for i in ids if i not in known]
-        if missing:
-            sys.exit("not in the catalogue, no package, or installs from its own page: " + ", ".join(missing))
-        entries = [e for e in entries if e["id"] in ids]
-    return entries
+    try:
+        return K.entries(cat, ids or None)
+    except KeyError as e:
+        sys.exit("not in the catalogue, no package, or installs from its own page: " + e.args[0])
 
 
 def local_package(out, e):
@@ -124,15 +111,8 @@ def from_catalog(ids, out):
         if hashlib.sha256(data).hexdigest() != e["sha256"] or len(data) != e["size"]:
             print("skipping %s: download does not match the catalogue" % e["id"], file=sys.stderr)
             continue
-        kind = e.get("kind")
-        meta = {"name": e.get("name") or e["id"], "author": e.get("author"), "version": e.get("version"),
-                "product": e["product"], "sha256": e["sha256"], "catalog_id": e["id"],
-                "source_url": e.get("source") or e.get("release") or
-                ("https://github.com/" + e["repo"] if e.get("repo") else None),
-                "genre": ",".join(kind) if isinstance(kind, list) else kind, "beta": bool(e.get("beta")),
-                "release_version": e.get("version"), "description": e.get("what"),
-                "license": e.get("lic"), "date": e.get("date"), "installs": e.get("installs")}
-        result.append((data, {k: v for k, v in meta.items() if v is not None}, e["id"]))
+        meta = K.meta_for(e)
+        result.append((data, meta, e["id"]))
     return result, cat.get("updated")
 
 
@@ -170,30 +150,8 @@ def thumbnails(d, cid):
 
 
 def write_index(out, updated=None):
-    """firmware/index.txt: what the device's list screen reads, one tab-separated
-    line per firmware (slug, name, version, genre, beta, product), stock first,
-    then by name. The first line is the catalogue date."""
-    root = os.path.join(out, "firmware")
-    path = os.path.join(root, "index.txt")
-    if updated is None and os.path.exists(path):
-        updated = open(path).readline().rstrip("\n").partition("\t")[2] or None
-    rows = []
-    for slug in os.listdir(root):
-        try:
-            m = json.load(open(os.path.join(root, slug, "meta.json")))
-        except (OSError, ValueError):
-            continue
-        clean = lambda v: str(v).replace("\t", " ").replace("\n", " ")
-        rows.append((m.get("kind") != "stock", m.get("name", slug).lower(),
-                     "\t".join(clean(v) for v in (slug, m.get("name", slug), m.get("version", ""),
-                                                  m.get("genre") or m.get("kind", ""),
-                                                  1 if m.get("beta") else 0, m["product"]))))
-    rows.sort()
-    with open(path, "w") as f:
-        f.write("updated\t%s\n" % (updated or ""))
-        for row in rows:
-            f.write(row[2] + "\n")
-    return len(rows)
+    """firmware/index.txt, from the card's meta.json files (fm1catalog)."""
+    return K.write_index(os.path.join(out, "firmware"), updated)
 
 
 def from_html(path):
@@ -218,42 +176,23 @@ def slugify(s):
 
 def build(data, meta, args):
     meta = dict(meta)
-    meta.setdefault("schema", 1)
-    meta.setdefault("family", P.FAMILY)
-    meta.setdefault("bytes", len(data))
-    meta.setdefault("sha256", hashlib.sha256(data).hexdigest())
-    pkg = P.Package(io.BytesIO(data))
-    pkg.inspect(strict=False)
-    meta.setdefault("product", pkg.product)
-    meta.setdefault("loader_sha256", pkg.loader_sha256())
-    if meta["sha256"] == P.STOCK_SHA256:
-        meta.setdefault("kind", "stock")
-        meta.setdefault("build_id", P.STOCK_SHA256)
-        meta.setdefault("release_version", "V15")
-    if "kind" not in meta:
-        if P.open_identity(meta["product"]) and "build_id" in meta:
-            meta["kind"] = "open"
-        elif P.community_identity(meta["product"]):
-            meta["kind"] = "community"
-        else:
-            meta["kind"] = "open"
-    if meta["kind"] == "open" and "build_id" not in meta:
-        sys.exit("%s: build_id unknown; pass --build-id or use the release's Update.html" % meta["product"])
     for k in EXTRA:
         v = getattr(args, k.replace("-", "_"), None)
         if v:
             meta[k] = v
-    meta.setdefault("name", meta.get("profile") or meta["product"])
-    _, checked = P.prepare(meta, io.BytesIO(data))
-    meta["loader_identity"] = checked["loader_identity"]
-    return meta
+    try:
+        return K.finish(meta, io.BytesIO(data))
+    except P.FM1Error as e:
+        if "build_id unknown" in str(e):
+            sys.exit(str(e))
+        raise
 
 
 def write(out, data, meta, slug=None):
     slug = slug or slugify(meta["name"] + "-" + meta.get("release_version", meta["sha256"][:8]))
     d = os.path.join(out, "firmware", slug)
     os.makedirs(d, exist_ok=True)
-    meta["file"] = meta["product"] + ".fwsc"
+    meta.setdefault("file", meta["product"] + ".fwsc")
     with open(os.path.join(d, meta["file"]), "wb") as f:
         f.write(data)
     with open(os.path.join(d, "meta.json"), "w") as f:
@@ -306,9 +245,6 @@ def main(argv=None):
             print("rejected %s: %s" % (meta.get("product") or meta.get("name"), e), file=sys.stderr)
             failed += 1
             continue
-        if meta["kind"] == "stock" and not meta.get("source_url"):
-            meta["source_url"] = "https://github.com/m-vave/fm1_open"
-            meta.setdefault("license", "Apache-2.0")
         d = write(args.out, data, meta, slug)
         if meta.get("catalog_id") and not args.no_thumbnails:
             thumbnails(d, meta["catalog_id"])
