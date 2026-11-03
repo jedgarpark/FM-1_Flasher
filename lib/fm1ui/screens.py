@@ -15,6 +15,7 @@ from fm1ui import ui
 from fm1ui.layout import L  # sizes and positions for this display
 
 STOCK_PRODUCT = "FM-1_015"
+FOOTER_SLACK = 20  # px: a footer tap this far off a button still counts
 
 
 def wrapped(name, s, color, x, y, width, anchor=(0, 0), pitch=18, lines=2):
@@ -181,16 +182,27 @@ class ListScreen(Screen):
             g.append(ui.triangle(bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left))
         self.view_g = self.view_toggle(as_list)
         g.append(self.view_g)
-        self.update_btn = None
-        if app.updater is not None and L.UPDATE_BTN:
-            self.update_btn = ui.Button("Update", *L.UPDATE_BTN, name=ui.SMALL)
-            g.append(self.update_btn.group)
-        if self.update_btn:  # "N/M" between Update and the next arrow
-            ux, _, uw, _ = L.UPDATE_BTN
-            page, px = "%d/%d" % (self.page + 1, pages), (ux + uw + L.NEXT[0]) // 2
+        # The footer's buttons, left to right, as (rect, name, group or None).
+        self.footer = [(self.prev, "prev", self.arrows[0]), (L.VIEW, "view", self.view_g)]
+        if app.updater is not None and L.SETTINGS_BTN:
+            sx, sy, sw, sh = L.SETTINGS_BTN
+            gear = ui.outlined(sx, sy, sw, sh, ui.PANEL, ui.LINE)
+            gear.append(ui.gear(sx + sw // 2, sy + sh // 2, min(sw, sh) // 2 - 5, ui.FG, ui.PANEL))
+            g.append(gear)
+            self.footer.append((L.SETTINGS_BTN, "settings", gear))
+        update = app.updater is not None and L.UPDATE_BTN
+        if update:
+            btn = ui.Button("Update", *L.UPDATE_BTN, name=ui.SMALL)
+            g.append(btn.group)
+            self.footer.append((L.UPDATE_BTN, "update", btn.group))
+        if L.PAGE_BETWEEN:  # between the last left button and the next arrow
+            lx, _, lw, _ = self.footer[-1][0]
+            px = (lx + lw + L.NEXT[0]) // 2
         else:
-            page, px = "Page %d of %d" % (self.page + 1, pages), L.PAGE_X or W // 2
+            px = W // 2
+        page = ("%d/%d" if update else "Page %d of %d") % (self.page + 1, pages)
         g.append(ui.text(ui.SMALL, page, ui.FG, px, L.PAGE_Y, (0.5, 0.5)))
+        self.footer.append((self.next, "next", self.arrows[1]))
         if app.updated and L.DATE_Y:
             g.append(ui.text(ui.SMALL, "Catalogue " + C.nice_date(app.updated), ui.DIM, W // 2, L.DATE_Y, (0.5, 0.5)))
         self.pages = pages
@@ -260,21 +272,17 @@ class ListScreen(Screen):
         return g
 
     def view_toggle(self, as_list):
-        """Two halves, pictures | text, with the current one lit."""
+        """One button showing the current view, pictures or text; a tap
+        anywhere on it switches to the other."""
         x, y, w, h = L.VIEW
         dy = L.VIEW_ICON_DY
-        half = w // 2
-        g = ui.outlined(x, y, w, h, ui.BG, ui.LINE)
-        lit = x + half if as_list else x
-        g.append(ui.panel(lit + 1, y + 1, half - 1, h - 2, ui.PANEL, 3))
-        g.append(ui.rect(x + half, y + 1, 1, h - 2, ui.LINE))
-        on, off = ui.CYAN, ui.DIM
-        c = off if as_list else on
-        for i in range(6):  # a 3x2 grid of small squares
-            g.append(ui.rect(x + 7 + (i % 3) * 8, y + dy + (i // 3) * 7, 6, 5, c))
-        c = on if as_list else off
-        for i in range(3):  # three lines of text
-            g.append(ui.rect(x + half + 8, y + dy + i * 5, 20, 2, c))
+        g = ui.outlined(x, y, w, h, ui.PANEL, ui.LINE)
+        if as_list:
+            for i in range(3):  # three lines of text
+                g.append(ui.rect(x + (w - 20) // 2, y + dy + i * 5, 20, 2, ui.CYAN))
+        else:
+            for i in range(6):  # a 3x2 grid of small squares
+                g.append(ui.rect(x + (w - 22) // 2 + (i % 3) * 8, y + dy + (i // 3) * 7, 6, 5, ui.CYAN))
         return g
 
     def set_view(self, view):
@@ -291,29 +299,34 @@ class ListScreen(Screen):
             self.page = page
             self.app.show()
 
-    def _prev_side(self, x):
-        # The page arrow and the view toggle split at the gap between them.
-        return x < (self.prev[0] + self.prev[2] + L.VIEW[0]) // 2
-
     def _fav_side(self, x):
         # The tabs take the header's full height (taps there land high)
         # and split at the gap between them.
         return x >= (self.tab_tag.rect[0] + self.tab_tag.rect[2] + self.tab_fav[0]) // 2
 
+    def _footer_at(self, x):
+        """The footer button nearest x, within FOOTER_SLACK: a fingertip
+        lands off a small button, and the buttons split the gaps between
+        them. (rect, name, group), or None."""
+        best, far = None, FOOTER_SLACK + 1
+        for item in self.footer:
+            bx, _, bw, _ = item[0]
+            d = bx - x if x < bx else x - (bx + bw - 1) if x >= bx + bw else 0
+            if d < far:
+                best, far = item, d
+        return best
+
     def _zone(self, x, y):
-        """"connect", "tabs", "left" (prev arrow or view toggle), "next",
-        "update" or None."""
+        """"connect", "tabs", a footer button's name ("prev", "view",
+        "settings", "update", "next") or None."""
         if y < L.GRID_Y - 2:
             if x >= L.CONNECT_ZONE_X:
                 return "connect"
             if L.TABS_ZONE[0] <= x < L.TABS_ZONE[1]:
                 return "tabs"
-        elif y >= self.prev[1] - 8 and x < L.FOOTER_LEFT_X:
-            return "left"
-        elif y >= self.next[1] - 8 and x >= L.W - L.NEXT_ZONE_W:
-            return "next"
-        elif self.update_btn and y >= self.prev[1] - 8:
-            return "update"
+        elif y >= self.prev[1] - 8:
+            item = self._footer_at(x)
+            return item[1] if item else None
         return None
 
     def target(self, x, y):
@@ -322,12 +335,8 @@ class ListScreen(Screen):
             return self.connect_btn.group if self.connect_btn else None
         if zone == "tabs":
             return self.tab_fav_g if self._fav_side(x) else self.tab_tag.group
-        if zone == "left":
-            return self.arrows[0] if self._prev_side(x) else self.view_g
-        if zone == "next":
-            return self.arrows[1]
-        if zone == "update":
-            return self.update_btn.group
+        if zone is not None:  # a footer button; None for an arrow with no page that way
+            return self._footer_at(x)[2]
         for e, card, heart, tile, g in self.cards:
             if _hit(heart, x, y):
                 return None  # the heart's own toggle is the feedback
@@ -346,16 +355,18 @@ class ListScreen(Screen):
                 self.tag = self.next_tag()
             self.page = 0
             self.app.show()
-        elif zone == "left":
-            if self._prev_side(x):
-                self.turn(-1)
-            else:
-                self.set_view("grid" if x < L.VIEW[0] + L.VIEW[2] // 2 else "list")
+        elif zone == "prev":
+            self.turn(-1)
+        elif zone == "view":
+            self.set_view("grid" if self.app.state.view == "list" else "list")
         elif zone == "next":
             self.turn(1)
         elif zone == "update":
             from fm1ui.update import UpdateScreen
             self.app.push(UpdateScreen(self.app))
+        elif zone == "settings":
+            from fm1ui.settings import SettingsScreen
+            self.app.push(SettingsScreen(self.app))
         else:
             e, tile = self._card_at(x, y)
             if tile is not None:

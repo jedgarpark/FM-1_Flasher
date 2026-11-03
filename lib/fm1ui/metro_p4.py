@@ -140,6 +140,13 @@ class Network:
             self.http = adafruit_requests.Session(pool, cm.get_radio_ssl_context(wifi.radio))
         return None
 
+    def status(self):
+        """(network name from settings.toml or None, IP address or None)."""
+        import os
+        import wifi
+        ip = wifi.radio.ipv4_address if wifi.radio.connected else None
+        return os.getenv("CIRCUITPY_WIFI_SSID"), str(ip) if ip else None
+
     def _get(self, url):
         r = self.http.get(url, headers={"User-Agent": "FM-1_Flasher"}, timeout=30)
         if r.status_code != 200:

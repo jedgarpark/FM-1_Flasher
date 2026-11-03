@@ -182,6 +182,9 @@ class HubNet:
     def connect(self):
         return None
 
+    def status(self):
+        return "Simulated WiFi", "127.0.0.1"
+
     def _open(self, url):
         import urllib.request
         return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "FM-1_Flasher ui_sim"}),

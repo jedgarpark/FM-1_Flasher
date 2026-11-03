@@ -46,14 +46,13 @@ def _big():
     # list: footer
     PREV=(7, 286, 64, 32),
     NEXT=(409, 286, 64, 32),
-    VIEW=(80, 286, 72, 32),  # the grid/list toggle
+    VIEW=(80, 286, 36, 32),  # the grid/list toggle: one tap switches
     VIEW_ICON_DY=10,
     PAGE_Y=296,
-    PAGE_X=None,  # "Page N of M" centre; None: the screen's
+    PAGE_BETWEEN=False,  # page number between the left buttons and NEXT, not centred
+    SETTINGS_BTN=None,  # the gear (boards with WiFi), or None
     UPDATE_BTN=None,  # Update firmwares (boards with WiFi), or None
     DATE_Y=311,  # catalogue date, or None
-    FOOTER_LEFT_X=160,  # footer taps left of this: prev arrow or view toggle
-    NEXT_ZONE_W=140,  # footer taps this close to the right edge: next arrow
     # details
     BACK_BTN=(8, 8, 84, 30),
     HEART_BTN=(424, 8, 48, 30),
@@ -84,6 +83,9 @@ def _big():
     BAR=(40, 156, 400, 26),
     PROGRESS_NOTE_Y=232,
     OK_BTN=(170, 266, 140, 40),
+    # settings
+    SETTINGS_TITLE_Y=23,
+    SETTINGS_TEXT_Y=64,
 )
 
 
@@ -110,16 +112,15 @@ def _small():
     ROW_W=152, ROW_H=26, ROW_PITCH=28,
     LIST_ROWS=6,
     ROW_HEART_DY=8,
-    PREV=(6, 208, 52, 28),
-    NEXT=(262, 208, 52, 28),
-    VIEW=(64, 208, 60, 28),
+    PREV=(6, 208, 40, 28),
+    NEXT=(274, 208, 40, 28),
+    VIEW=(52, 208, 32, 28),
     VIEW_ICON_DY=8,
     PAGE_Y=222,
-    PAGE_X=193,  # between the view toggle and the next arrow (without Update)
-    UPDATE_BTN=(140, 208, 72, 28),
+    PAGE_BETWEEN=True,
+    SETTINGS_BTN=(90, 208, 32, 28),
+    UPDATE_BTN=(128, 208, 60, 28),
     DATE_Y=None,
-    FOOTER_LEFT_X=132,
-    NEXT_ZONE_W=100,
     BACK_BTN=(6, 6, 64, 26),
     HEART_BTN=(270, 6, 44, 26),
     HEART_AT=(285, 13),
@@ -147,6 +148,9 @@ def _small():
     BAR=(16, 100, 288, 24),
     PROGRESS_NOTE_Y=160,
     OK_BTN=(100, 198, 120, 34),
+    # settings
+    SETTINGS_TITLE_Y=19,
+    SETTINGS_TEXT_Y=52,
 )
 
 

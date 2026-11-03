@@ -221,6 +221,23 @@ def text(name, s, color, x, y, anchor=(0, 0)):
     return Text(name, s, color, x, y, anchor)
 
 
+def gear(cx, cy, r, color, hole):
+    """An eight-toothed gear of outer radius r centred at (cx, cy), with a
+    hole in the colour `hole` (the button's fill)."""
+    import math
+    inner = r * 0.72
+    pts = []
+    for i in range(8):
+        a = i * math.pi / 4
+        for rad, da in ((inner, -0.30), (r, -0.17), (r, 0.17), (inner, 0.30)):
+            pts.append((round(rad * math.cos(a + da)), round(rad * math.sin(a + da))))
+    g = displayio.Group()
+    g.append(vectorio.Polygon(pixel_shader=palette(color), points=pts, x=cx, y=cy))
+    g.append(vectorio.Circle(pixel_shader=palette(color), radius=round(inner), x=cx, y=cy))
+    g.append(vectorio.Circle(pixel_shader=palette(hole), radius=max(2, round(r * 0.3)), x=cx, y=cy))
+    return g
+
+
 def triangle(x, y, w, h, color, left):
     pts = [(w, 0), (0, h // 2), (w, h)] if left else [(0, 0), (w, h // 2), (0, h)]
     return vectorio.Polygon(pixel_shader=palette(color), points=pts, x=x, y=y)
