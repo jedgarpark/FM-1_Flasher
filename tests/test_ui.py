@@ -63,6 +63,34 @@ class Catalog(unittest.TestCase):
         self.assertFalse(s.toggle_favorite("zp12"))
         self.assertEqual(C.State(self.state_path).favorites, {"sloop"})
 
+    def test_sorts(self):
+        with open(self.index, "w") as f:
+            f.write("updated\tnow\n"
+                    "stock-v15\tM-VAVE V15\tV15\tofficial\t0\tFM-1_015\t\t\n"
+                    "amb\tAmb\t1\tambient\t0\tFM-1_901\t2026-10-08\t2026-11-01\n"
+                    "bub\tBub\t1\tdrums\t0\tFM-1_902\t2026-10-30\t2026-10-30\n"
+                    "cor\tCor\t1\tdrums\t0\tFM-1_903\t2026-10-08\t2026-10-05\n"
+                    "old\tOld card line\t1\tdrums\t0\tFM-1_904\n")
+        index = C.Index(self.index)
+        self.assertEqual(len(index), 5)  # lines without dates still count
+        names = lambda items: [index.entry(i).slug for i in items]  # noqa: E731
+        self.assertEqual(names(index.select()), ["stock-v15", "amb", "bub", "cor", "old"])
+        # newest on the hub first, ties by name, undated last
+        self.assertEqual(names(index.select(sort="new")), ["bub", "amb", "cor", "stock-v15", "old"])
+        self.assertEqual(names(index.select(sort="updated")), ["amb", "bub", "cor", "stock-v15", "old"])
+        self.assertEqual(names(index.select(tag="drums", sort="updated")), ["bub", "cor", "old"])
+        self.assertEqual(index.entry(1).added, "2026-10-08")
+        self.assertEqual(index.entry(4).date, "")
+        self.assertEqual(index.with_product("FM-1_904"), ["old"])
+        self.assertEqual([C.next_sort(s) for s in C.SORTS + ("bogus",)], ["new", "updated", "az", "az"])
+
+    def test_sort_persists(self):
+        s = C.State(self.state_path)
+        self.assertEqual(s.sort, "az")
+        s.sort = "new"
+        s.save()
+        self.assertEqual(C.State(self.state_path).sort, "new")
+
     def test_view_persists(self):
         s = C.State(self.state_path)
         self.assertEqual(s.view, "grid")

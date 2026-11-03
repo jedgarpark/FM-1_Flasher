@@ -53,6 +53,10 @@ def job(root, plan, net, stats):
     total, name) as it goes. Counts land in `stats`. Nothing is removed."""
     K.clean_parts(root)
 
+    for i, e in enumerate(plan.dated):  # cards from before the lists sorted by date
+        yield ("Adding dates", i, len(plan.dated), e.get("name") or e["id"])
+        K.set_dates(root, e)
+
     total = plan.bytes
     base = 0
     since_index = 0
@@ -342,9 +346,26 @@ class UpdateScreen:
                 self.pics = picture_list(app.root, self.plan)
             except (OSError, ValueError, KeyError) as e:
                 err = "Couldn't read the hub's catalog (%s)." % (str(e) or repr(e))
+            if err is None and self.plan.dated and not (self.plan.downloads or self.pics):
+                self.add_dates()
         self.message = err or ""
         self.mode = "error" if err else "plan"
         app.show()  # the plan has its own buttons (Details)
+
+    def add_dates(self):
+        """Nothing to download, but the card's firmwares lack the catalogue's
+        dates (the list's New and Updated sorts): add them now, once."""
+        plan, app = self.plan, self.app
+        self.sub.set("Adding dates to the list...")
+        app.refresh()
+        try:
+            for e in plan.dated:
+                K.set_dates(app.root, e)
+            K.write_index(app.root, plan.updated_at)
+            app.reload_index()
+        except OSError as e:
+            print("update: dates: %r" % e)
+        plan.dated = []
 
     def start_run(self):
         if self.mid is not None:

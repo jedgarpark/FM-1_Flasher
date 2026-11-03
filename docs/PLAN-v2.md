@@ -200,12 +200,14 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
 
 ## To look into
 
-- [ ] Sort the lists: A-Z (as now), New (newest on the hub first) and
-      Recently updated. The hub's catalogue has both dates for each firmware
-      (`added` and `date`), but `index.txt` doesn't carry them yet:
-      `fm1catalog.write_index` (the device and `make_sd.py`) would add them.
-      A sort button beside the tag and favourites filters, kept with the
-      list view in the state.
+- [x] Sort the lists: A-Z, New (newest on the hub first) and RcntUp
+      (newest release first). meta.json keeps the catalogue's `added` and
+      `date`, and `index.txt` carries them as two more columns (older cards'
+      six-column lines still read, and sort last). A Sort button in the
+      header beside the tag and favourites tabs steps through the three
+      (the favourites tab is now just the heart); the choice is
+      kept in the state. Update firmwares copies the dates into an older
+      card's unchanged firmwares (at once when there's nothing to download).
 
 ## Upstream and the hub
 

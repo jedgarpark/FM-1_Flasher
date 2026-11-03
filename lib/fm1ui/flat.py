@@ -388,7 +388,7 @@ class ScrollList(Scroller, S.ListScreen):
 
     def _key(self):
         st = self.app.state
-        return (self.tag, self.favorites_only, st.view, self.app.installed_slug(),
+        return (self.tag, self.favorites_only, st.view, st.sort, self.app.installed_slug(),
                 tuple(sorted(st.favorites)), id(self.app.index))
 
     def _page(self, n, finish=True):

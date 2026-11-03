@@ -371,6 +371,7 @@ class DeviceState(C.State):
                     self.favorites = set(d.get("favorites", ()))
                     self.installed = d.get("installed")
                     self.view = d.get("view", "grid")
+                    self.sort = d.get("sort", "az")
                     self.scroll = d.get("scroll", True)
                 except ValueError:
                     pass
@@ -379,7 +380,7 @@ class DeviceState(C.State):
         if super().save():
             return True
         data = json.dumps({"favorites": sorted(self.favorites), "installed": self.installed, "view": self.view,
-                           "scroll": self.scroll})
+                           "sort": self.sort, "scroll": self.scroll})
         return _nvm_write(self.NVM_STATE, 512, data.encode())
 
 

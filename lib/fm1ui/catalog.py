@@ -3,24 +3,35 @@
 
 The firmware list comes from firmware/index.txt, written by tools/make_sd.py:
 a first line "updated<TAB>date", then one line per firmware with slug, name,
-version, genre, beta (0/1) and product. Favourites, the last install and a
-pending install live in a small JSON state file on the card.
+version, genre, beta (0/1), product, and the dates the hub added it and
+released it (YYYY-MM-DD, or empty; cards written before the lists could sort
+have no date columns). Favourites, the last install and a pending install
+live in a small JSON state file on the card.
 """
 import json
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
+# How the lists can be sorted, in the order the Sort button steps through
+# them: by name (stock first), newest on the hub first ("New"), newest
+# release first ("RcntUp": recently updated).
+SORTS = ("az", "new", "updated")
+SORT_LABELS = {"az": "A-Z", "new": "New", "updated": "RcntUp"}
+_SORT_COLUMN = {"new": 6, "updated": 7}
+
 
 class Entry:
-    __slots__ = ("slug", "name", "version", "genre", "beta", "product")
+    __slots__ = ("slug", "name", "version", "genre", "beta", "product", "added", "date")
 
-    def __init__(self, slug, name, version, genre, beta, product):
+    def __init__(self, slug, name, version, genre, beta, product, added="", date=""):
         self.slug = slug
         self.name = name
         self.version = version
         self.genre = genre
         self.beta = beta
         self.product = product
+        self.added = added
+        self.date = date
 
     @property
     def kind(self):
@@ -43,7 +54,7 @@ class Index:
                 line = raw.rstrip(b"\r\n")
                 if n == 0 and line.startswith(b"updated\t"):
                     self.updated = line[8:].decode() or None
-                elif line.count(b"\t") == 5:
+                elif line.count(b"\t") >= 5:
                     self.starts.append(pos)
                 pos += len(raw)
 
@@ -61,7 +72,8 @@ class Index:
         with open(self.path, "rb") as f:
             f.seek(self.starts[i])
             fields = f.readline().rstrip(b"\r\n").decode().split("\t")
-        return Entry(fields[0], fields[1], fields[2], fields[3], fields[4] == "1", fields[5])
+        fields += [""] * (8 - len(fields))
+        return Entry(fields[0], fields[1], fields[2], fields[3], fields[4] == "1", fields[5], fields[6], fields[7])
 
     def slug(self, i):
         return self.entry(i).slug
@@ -73,16 +85,22 @@ class Index:
                 return self.entry(i)
         return None
 
-    def select(self, slugs=None, tag=None):
+    def select(self, slugs=None, tag=None, sort="az"):
         """Positions of the entries whose slug is in `slugs` (all if None)
-        and that carry `tag` among their genres (any if None)."""
-        if slugs is None and tag is None:
+        and that carry `tag` among their genres (any if None), in `sort`'s
+        order (one of SORTS). The dated sorts put the newest first, then by
+        name; entries without a date (stock, own builds) go last."""
+        col = _SORT_COLUMN.get(sort)
+        if slugs is None and tag is None and col is None:
             return list(range(len(self.starts)))
         out = []
         for i, line in self._lines():
-            fields = line.split("\t", 4)
+            fields = line.split("\t")
             if (slugs is None or fields[0] in slugs) and (tag is None or tag in fields[3].split(",")):
-                out.append(i)
+                out.append(i if col is None else (-day(fields[col] if len(fields) > col else ""), i))
+        if col is not None:
+            out.sort()  # (newest first, then file order: by name)
+            out = [i for _, i in out]
         return out
 
     def tags(self):
@@ -95,14 +113,31 @@ class Index:
         return [g for g, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
     def with_product(self, product):
-        tail = "\t" + product
-        return [line.split("\t", 1)[0] for _, line in self._lines() if line.endswith(tail)]
+        out = []
+        for _, line in self._lines():
+            fields = line.split("\t", 7)
+            if fields[5] == product:
+                out.append(fields[0])
+        return out
 
 
 def load_index(path):
     """(catalogue date or None, [Entry]): the whole list, parsed."""
     index = Index(path)
     return index.updated, [index.entry(i) for i in range(len(index))]
+
+
+def day(s):
+    """'2026-10-28' -> 20261028; empty or anything else -> 0."""
+    try:
+        return int(s[:10].replace("-", ""))
+    except ValueError:
+        return 0
+
+
+def next_sort(sort):
+    """The sort after `sort`, for the Sort button."""
+    return SORTS[(SORTS.index(sort) + 1) % len(SORTS)] if sort in SORTS else SORTS[0]
 
 
 def nice_date(s):
@@ -140,7 +175,7 @@ def page_slice(items, page, per_page):
 
 class State:
     """Favourites, the last install, a pending install, the list view
-    ("grid" or "list") and whether its pages scroll (boards that can,
+    ("grid" or "list"), its sort (one of SORTS) and whether its pages scroll (boards that can,
     fm1ui.flat), kept in a JSON file.
     Writes are best effort: a read-only card just means nothing is remembered."""
 
@@ -150,6 +185,7 @@ class State:
         self.installed = None  # {"slug": ..., "product": ...}
         self.pending = None    # slug of an install to run after a reload
         self.view = "grid"
+        self.sort = "az"
         self.scroll = True
         try:
             with open(path) as f:
@@ -158,13 +194,14 @@ class State:
             self.installed = data.get("installed")
             self.pending = data.get("pending")
             self.view = data.get("view", "grid")
+            self.sort = data.get("sort", "az")
             self.scroll = data.get("scroll", True)
         except (OSError, ValueError):
             pass
 
     def save(self):
         data = {"favorites": sorted(self.favorites), "installed": self.installed, "pending": self.pending,
-                "view": self.view, "scroll": self.scroll}
+                "view": self.view, "sort": self.sort, "scroll": self.scroll}
         try:
             with open(self.path, "w") as f:
                 json.dump(data, f)

@@ -22,13 +22,14 @@ def _big():
     W=480, H=320,
     # list: header
     TITLE_AT=(12, 18),  # "FM-1 Flasher", or None
-    TAG_BTN=(124, 5, 96, 26),
-    FAV_TAB=(226, 5, 64, 26),
+    TAG_BTN=(116, 5, 84, 26),
+    FAV_TAB=(206, 5, 40, 26),  # favourites only: a heart
+    SORT_BTN=(252, 5, 70, 26),  # A-Z, New, RcntUp: one tap steps on
     FM1_RIGHT=468,  # the FM-1 status's right end
     HEADER_Y=18,
-    CONNECT_BTN=(322, 5, 150, 26),
-    TABS_ZONE=(110, 290),  # x range where header taps go to the two tabs
-    CONNECT_ZONE_X=300,  # header taps from here go to Connect FM-1
+    CONNECT_BTN=(330, 5, 142, 26),
+    TABS_ZONE=(110, 326),  # x range where header taps go to the three tabs
+    CONNECT_ZONE_X=326,  # header taps from here go to Connect FM-1
     # list: cards
     COLS=3, ROWS=2,  # six cards: the picture pool is ui.SLOTS = 6
     CARD_W=151, CARD_H=118, GAP=6,
@@ -94,13 +95,14 @@ def _small():
     return dict(
     W=320, H=240,
     TITLE_AT=None,
-    TAG_BTN=(6, 5, 84, 26),
-    FAV_TAB=(96, 5, 56, 26),
+    TAG_BTN=(6, 5, 70, 26),
+    FAV_TAB=(82, 5, 34, 26),
+    SORT_BTN=(122, 5, 64, 26),
     FM1_RIGHT=312,
     HEADER_Y=18,
-    CONNECT_BTN=(176, 5, 138, 26),
-    TABS_ZONE=(0, 160),
-    CONNECT_ZONE_X=164,
+    CONNECT_BTN=(192, 5, 122, 26),
+    TABS_ZONE=(0, 189),
+    CONNECT_ZONE_X=189,
     COLS=3, ROWS=2,
     CARD_W=100, CARD_H=82, GAP=4,
     GRID_X=6, GRID_Y=36,
