@@ -344,12 +344,31 @@ def load_tiles(path, bitmaps):
     return pal
 
 
+def shrink(src, factor):
+    """A new bitmap `factor` times smaller, nearest neighbour: the pictures
+    are 480 px pixel art at 6x in a tile, so 2x keeps them sharp. A fresh
+    bitmap per call, which only the Metro's 320x240 layout uses (PSRAM)."""
+    w, h = src.width // factor, src.height // factor
+    dst = displayio.Bitmap(w, h, 16)
+    for yy in range(h):
+        sy = yy * factor
+        for xx in range(w):
+            dst[xx, yy] = src[xx * factor, sy]
+    return dst
+
+
 def thumbnail(path, x, y, size, placeholder, first_slot=0):
     """The firmware's picture in pool slots from `first_slot` (one for an
     80 px thumbnail, four for a 160 px picture), or a placeholder panel with
     `placeholder` text when there is no picture."""
     n = size // TILE
     try:
+        if n == 0:  # smaller than a tile (the 320x240 layout): shrink one
+            tile = slots()[first_slot]
+            pal = load_tiles(path, [tile])
+            g = displayio.Group()
+            g.append(displayio.TileGrid(shrink(tile, TILE // size), pixel_shader=pal, x=x, y=y))
+            return g
         tiles = slots()[first_slot:first_slot + n * n]
         pal = load_tiles(path, tiles)
         g = displayio.Group()

@@ -12,18 +12,24 @@ import displayio
 
 from fm1ui import catalog as C
 from fm1ui import ui
+from fm1ui.layout import L  # sizes and positions for this display
 
-W, H = 480, 320
-COLS, ROWS = 3, 2  # six cards: the picture pool is ui.SLOTS = 6
-PER_PAGE = COLS * ROWS
-CARD_W, CARD_H, GAP = 151, 118, 6
-GRID_X, GRID_Y = 7, 40
-ROW_W, ROW_H, ROW_PITCH = 230, 28, 30  # the text list: no pictures, so more a page
-LIST_ROWS = 8
-PER_LIST = 2 * LIST_ROWS  # two columns
-VIEW = (80, 286, 72, 32)  # the footer's grid/list toggle
-THUMB = 80
 STOCK_PRODUCT = "FM-1_015"
+
+
+def wrapped(name, s, color, x, y, width, anchor=(0, 0), pitch=18, lines=2):
+    """`s` on up to `lines` lines of at most `width` px, as a Group; the last
+    line is ellipsized. Short text is a single ui.text, as before."""
+    width_of = lambda t: ui.width(name, t)  # noqa: E731
+    if width_of(s) <= width:
+        return ui.text(name, s, color, x, y, anchor)
+    parts = C.wrap(s, width_of, width)
+    if len(parts) > lines:
+        parts = parts[:lines - 1] + [C.ellipsize(" ".join(parts[lines - 1:]), width_of, width)]
+    g = displayio.Group()
+    for i, part in enumerate(parts):
+        g.append(ui.text(name, part, color, x, y + i * pitch, anchor))
+    return g
 
 
 def _hit(rect, x, y, slack=0):
@@ -103,7 +109,7 @@ class ListScreen(Screen):
         return self.app.index.select(self.app.state.favorites if self.favorites_only else None, self.tag)
 
     def per_page(self):
-        return PER_LIST if self.app.state.view == "list" else PER_PAGE
+        return 2 * L.LIST_ROWS if self.app.state.view == "list" else L.COLS * L.ROWS
 
     def next_tag(self):
         """All -> each tag, most used first -> All."""
@@ -121,20 +127,23 @@ class ListScreen(Screen):
         del items
         installed = app.installed_slug()
 
+        W, H = L.W, L.H
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
         # header
-        g.append(ui.text(ui.NAME, "FM-1 Flasher", ui.CYAN, 12, 18, (0, 0.5)))
+        if L.TITLE_AT:
+            g.append(ui.text(ui.NAME, "FM-1 Flasher", ui.CYAN, L.TITLE_AT[0], L.TITLE_AT[1], (0, 0.5)))
         tag_color = ui.kind_color(self.tag) if self.tag else ui.CYAN
-        self.tab_tag = ui.Button(tag_label(self.tag), 124, 5, 96, 26, edge=tag_color,
+        self.tab_tag = ui.Button(tag_label(self.tag), *L.TAG_BTN, edge=tag_color,
                                  color=tag_color if self.tag else ui.FG)
         g.append(self.tab_tag.group)
-        self.tab_fav = (226, 5, 64, 26)
+        self.tab_fav = L.FAV_TAB
+        fx, fy = L.FAV_TAB[0], L.FAV_TAB[1]
         on = self.favorites_only
-        self.tab_fav_g = ui.outlined(226, 5, 64, 26, ui.PANEL if on else ui.BG, ui.CYAN if on else ui.LINE)
+        self.tab_fav_g = ui.outlined(*L.FAV_TAB, ui.PANEL if on else ui.BG, ui.CYAN if on else ui.LINE)
         g.append(self.tab_fav_g)
-        g.append(ui.heart_tile(True, 236, 12))
-        g.append(ui.text(ui.SMALL, "%d" % len(app.state.favorites), ui.FG if on else ui.DIM, 256, 18, (0, 0.5)))
+        g.append(ui.heart_tile(True, fx + 10, fy + 7))
+        g.append(ui.text(ui.SMALL, "%d" % len(app.state.favorites), ui.FG if on else ui.DIM, fx + 30, fy + 13, (0, 0.5)))
         self.fm1_at = len(g)
         g.append(self.fm1_header())
 
@@ -149,19 +158,20 @@ class ListScreen(Screen):
                 empty = "No %s firmware on the card." % tag_label(self.tag)
             else:
                 empty = "No firmware found on the card."
-            g.append(ui.text(ui.BODY, empty, ui.DIM, W // 2, 160, (0.5, 0.5)))
+            g.append(wrapped(ui.BODY, empty, ui.DIM, W // 2, L.EMPTY_Y, W - 24, (0.5, 0.5)))
+        as_list = self.app.state.view == "list"
         for i, e in enumerate(shown):
-            if per == PER_LIST:
-                x = GRID_X + (i // LIST_ROWS) * (ROW_W + GAP)
-                g.append(self.row(e, x, GRID_Y + (i % LIST_ROWS) * ROW_PITCH, e.slug == installed))
+            if as_list:
+                x = L.GRID_X + (i // L.LIST_ROWS) * (L.ROW_W + L.GAP)
+                g.append(self.row(e, x, L.GRID_Y + (i % L.LIST_ROWS) * L.ROW_PITCH, e.slug == installed))
             else:
-                x = GRID_X + (i % COLS) * (CARD_W + GAP)
-                y = GRID_Y + (i // COLS) * (CARD_H + GAP)
+                x = L.GRID_X + (i % L.COLS) * (L.CARD_W + L.GAP)
+                y = L.GRID_Y + (i // L.COLS) * (L.CARD_H + L.GAP)
                 g.append(self.card(e, x, y, e.slug == installed, i))
 
         # footer
-        self.prev = (7, 286, 64, 32)
-        self.next = (409, 286, 64, 32)
+        self.prev = L.PREV
+        self.next = L.NEXT
         self.arrows = []  # outlined groups, or None when there's no page that way
         for (bx, by, bw, bh), left in ((self.prev, True), (self.next, False)):
             active = (self.page > 0) if left else (self.page < pages - 1)
@@ -169,11 +179,12 @@ class ListScreen(Screen):
             self.arrows.append(box if active else None)
             g.append(box)
             g.append(ui.triangle(bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left))
-        self.view_g = self.view_toggle(per == PER_LIST)
+        self.view_g = self.view_toggle(as_list)
         g.append(self.view_g)
-        g.append(ui.text(ui.SMALL, "Page %d of %d" % (self.page + 1, pages), ui.FG, W // 2, 296, (0.5, 0.5)))
-        if app.updated:
-            g.append(ui.text(ui.SMALL, "Catalogue " + C.nice_date(app.updated), ui.DIM, W // 2, 311, (0.5, 0.5)))
+        g.append(ui.text(ui.SMALL, "Page %d of %d" % (self.page + 1, pages), ui.FG, L.PAGE_X or W // 2, L.PAGE_Y,
+                         (0.5, 0.5)))
+        if app.updated and L.DATE_Y:
+            g.append(ui.text(ui.SMALL, "Catalogue " + C.nice_date(app.updated), ui.DIM, W // 2, L.DATE_Y, (0.5, 0.5)))
         self.pages = pages
         self.group = g
         return g
@@ -184,59 +195,66 @@ class ListScreen(Screen):
         app = self.app
         g = displayio.Group()
         self.connect_btn = None
+        right, y = L.FM1_RIGHT, L.HEADER_Y
         if app.identity:
-            status = fm1_status(app)
-            g.append(ui.text(ui.SMALL, status, ui.FG, 468, 18, (1, 0.5)))
-            g.append(ui.rect(468 - ui.width(ui.SMALL, status) - 14, 14, 8, 8, ui.OK))
+            room = right - (L.FAV_TAB[0] + L.FAV_TAB[2]) - 20  # the dot and a gap after the tabs
+            status = C.ellipsize(fm1_status(app), lambda s: ui.width(ui.SMALL, s), room)
+            g.append(ui.text(ui.SMALL, status, ui.FG, right, y, (1, 0.5)))
+            g.append(ui.rect(right - ui.width(ui.SMALL, status) - 14, y - 4, 8, 8, ui.OK))
         elif app.connecting:
-            g.append(ui.text(ui.SMALL, "Connecting...", ui.DIM, 468, 18, (1, 0.5)))
+            g.append(ui.text(ui.SMALL, "Connecting...", ui.DIM, right, y, (1, 0.5)))
         else:
-            self.connect_btn = ui.Button("Connect FM-1", 322, 5, 150, 26, edge=ui.WARN if app.connect_failed else ui.CYAN)
+            self.connect_btn = ui.Button("Connect FM-1", *L.CONNECT_BTN, edge=ui.WARN if app.connect_failed else ui.CYAN)
             g.append(self.connect_btn.group)
         return g
 
     def card(self, e, x, y, installed, slot):
-        g = ui.outlined(x, y, CARD_W, CARD_H, ui.PANEL, ui.CYAN if installed else ui.LINE)
+        cw, ch, thumb = L.CARD_W, L.CARD_H, L.THUMB
+        g = ui.outlined(x, y, cw, ch, ui.PANEL, ui.CYAN if installed else ui.LINE)
         if installed:  # a second line makes the outline read at a glance
-            g.append(ui.panel(x + 1, y + 1, CARD_W - 2, CARD_H - 2, ui.CYAN, 3))
-            g.append(ui.panel(x + 2, y + 2, CARD_W - 4, CARD_H - 4, ui.PANEL, 2))
-        g.append(ui.rect(x + 4, y + 2, CARD_W - 8, 3, ui.kind_color(e.kind)))
-        tx = x + (CARD_W - THUMB) // 2
-        g.append(ui.thumbnail(self.app.path(e.slug, "thumb.bmp"), tx, y + 8, THUMB, e.version, slot))
+            g.append(ui.panel(x + 1, y + 1, cw - 2, ch - 2, ui.CYAN, 3))
+            g.append(ui.panel(x + 2, y + 2, cw - 4, ch - 4, ui.PANEL, 2))
+        g.append(ui.rect(x + 4, y + 2, cw - 8, 3, ui.kind_color(e.kind)))
+        tx, ty = x + (cw - thumb) // 2, y + L.CARD_THUMB_Y
+        g.append(ui.thumbnail(self.app.path(e.slug, "thumb.bmp"), tx, ty, thumb, e.version, slot))
         if installed:
-            g.append(ui.rect(tx, y + 76, THUMB, 12, ui.CYAN))
-            g.append(ui.text(ui.SMALL, "INSTALLED", ui.BG, tx + THUMB // 2, y + 82, (0.5, 0.5)))
+            bx, bw = (x + 4, cw - 8) if L.BAND_FULL else (tx, thumb)
+            g.append(ui.rect(bx, ty + thumb - 12, bw, 12, ui.CYAN))
+            g.append(ui.text(ui.SMALL, "INSTALLED", ui.BG, bx + bw // 2, ty + thumb - 6, (0.5, 0.5)))
         fav = e.slug in self.app.state.favorites
-        tile = ui.heart_tile(fav, x + CARD_W - 15, y + 10)
+        tile = ui.heart_tile(fav, x + cw - 15, y + 10)
         g.append(tile)
-        name = C.ellipsize(e.name, lambda s: ui.width(ui.NAME, s), CARD_W - 8)
-        g.append(ui.text(ui.NAME, name, ui.FG, x + CARD_W // 2, y + 90, (0.5, 0)))
-        version = C.ellipsize(e.version, lambda s: ui.width(ui.SMALL, s), CARD_W - (50 if e.beta else 8))
+        name = C.ellipsize(e.name, lambda s: ui.width(ui.NAME, s), cw - 8)
+        g.append(ui.text(ui.NAME, name, ui.FG, x + cw // 2, y + L.CARD_NAME_Y, (0.5, 0)))
+        vy = y + L.CARD_VERSION_Y
+        version = C.ellipsize(e.version, lambda s: ui.width(ui.SMALL, s), cw - (50 if e.beta else 8))
         if e.beta:
             vw, bw = ui.width(ui.SMALL, version + " "), ui.width(ui.SMALL, "beta")
-            left = x + (CARD_W - vw - bw) // 2
-            g.append(ui.text(ui.SMALL, version, ui.DIM, left, y + 106, (0, 0)))
-            g.append(ui.text(ui.SMALL, "beta", ui.WARN, left + vw, y + 106, (0, 0)))
+            left = x + (cw - vw - bw) // 2
+            g.append(ui.text(ui.SMALL, version, ui.DIM, left, vy, (0, 0)))
+            g.append(ui.text(ui.SMALL, "beta", ui.WARN, left + vw, vy, (0, 0)))
         else:
-            g.append(ui.text(ui.SMALL, version, ui.DIM, x + CARD_W // 2, y + 106, (0.5, 0)))
-        self.cards.append((e, (x, y, CARD_W, CARD_H), (x + CARD_W - 28, y - GAP, 28 + GAP, 50), tile, g))
+            g.append(ui.text(ui.SMALL, version, ui.DIM, x + cw // 2, vy, (0.5, 0)))
+        self.cards.append((e, (x, y, cw, ch), (x + cw - 28, y - L.GAP, 28 + L.GAP, 50), tile, g))
         return g
 
     def row(self, e, x, y, installed):
         """One firmware as its name and heart, with the tag's colour stripe."""
-        g = ui.outlined(x, y, ROW_W, ROW_H, ui.PANEL, ui.CYAN if installed else ui.LINE)
-        g.append(ui.rect(x + 5, y + 6, 3, ROW_H - 12, ui.kind_color(e.kind)))
-        name = C.ellipsize(e.name, lambda s: ui.width(ui.NAME, s), ROW_W - 50)
-        g.append(ui.text(ui.NAME, name, ui.CYAN if installed else ui.FG, x + 16, y + ROW_H // 2, (0, 0.5)))
+        rw, rh = L.ROW_W, L.ROW_H
+        g = ui.outlined(x, y, rw, rh, ui.PANEL, ui.CYAN if installed else ui.LINE)
+        g.append(ui.rect(x + 5, y + 6, 3, rh - 12, ui.kind_color(e.kind)))
+        name = C.ellipsize(e.name, lambda s: ui.width(ui.NAME, s), rw - 50)
+        g.append(ui.text(ui.NAME, name, ui.CYAN if installed else ui.FG, x + 16, y + rh // 2, (0, 0.5)))
         fav = e.slug in self.app.state.favorites
-        tile = ui.heart_tile(fav, x + ROW_W - 22, y + 9)
+        tile = ui.heart_tile(fav, x + rw - 22, y + L.ROW_HEART_DY)
         g.append(tile)
-        self.cards.append((e, (x, y, ROW_W, ROW_H), (x + ROW_W - 40, y - 1, 46, ROW_H + 2), tile, g))
+        self.cards.append((e, (x, y, rw, rh), (x + rw - 40, y - 1, 46, rh + 2), tile, g))
         return g
 
     def view_toggle(self, as_list):
         """Two halves, pictures | text, with the current one lit."""
-        x, y, w, h = VIEW
+        x, y, w, h = L.VIEW
+        dy = L.VIEW_ICON_DY
         half = w // 2
         g = ui.outlined(x, y, w, h, ui.BG, ui.LINE)
         lit = x + half if as_list else x
@@ -245,10 +263,10 @@ class ListScreen(Screen):
         on, off = ui.CYAN, ui.DIM
         c = off if as_list else on
         for i in range(6):  # a 3x2 grid of small squares
-            g.append(ui.rect(x + 7 + (i % 3) * 8, y + 10 + (i // 3) * 7, 6, 5, c))
+            g.append(ui.rect(x + 7 + (i % 3) * 8, y + dy + (i // 3) * 7, 6, 5, c))
         c = on if as_list else off
         for i in range(3):  # three lines of text
-            g.append(ui.rect(x + half + 8, y + 10 + i * 5, 20, 2, c))
+            g.append(ui.rect(x + half + 8, y + dy + i * 5, 20, 2, c))
         return g
 
     def set_view(self, view):
@@ -267,21 +285,35 @@ class ListScreen(Screen):
 
     def _prev_side(self, x):
         # The page arrow and the view toggle split at the gap between them.
-        return x < (self.prev[0] + self.prev[2] + VIEW[0]) // 2
+        return x < (self.prev[0] + self.prev[2] + L.VIEW[0]) // 2
 
     def _fav_side(self, x):
         # The tabs take the header's full height (taps there land high)
         # and split at the gap between them.
         return x >= (self.tab_tag.rect[0] + self.tab_tag.rect[2] + self.tab_fav[0]) // 2
 
+    def _zone(self, x, y):
+        """"connect", "tabs", "left" (prev arrow or view toggle), "next" or None."""
+        if y < L.GRID_Y - 2:
+            if x >= L.CONNECT_ZONE_X:
+                return "connect"
+            if L.TABS_ZONE[0] <= x < L.TABS_ZONE[1]:
+                return "tabs"
+        elif y >= self.prev[1] - 8 and x < L.FOOTER_LEFT_X:
+            return "left"
+        elif y >= self.next[1] - 8 and x >= L.W - L.NEXT_ZONE_W:
+            return "next"
+        return None
+
     def target(self, x, y):
-        if y < GRID_Y - 2 and x >= 300:
+        zone = self._zone(x, y)
+        if zone == "connect":
             return self.connect_btn.group if self.connect_btn else None
-        if y < GRID_Y - 2 and 110 <= x < 290:
+        if zone == "tabs":
             return self.tab_fav_g if self._fav_side(x) else self.tab_tag.group
-        if y >= self.prev[1] - 8 and x < 160:
+        if zone == "left":
             return self.arrows[0] if self._prev_side(x) else self.view_g
-        if y >= self.next[1] - 8 and x >= W - 140:
+        if zone == "next":
             return self.arrows[1]
         for e, card, heart, tile, g in self.cards:
             if _hit(heart, x, y):
@@ -291,21 +323,22 @@ class ListScreen(Screen):
         return None
 
     def tap(self, x, y):
-        if y < GRID_Y - 2 and x >= 300:
+        zone = self._zone(x, y)
+        if zone == "connect":
             self.app.connect()  # connected: ask again, e.g. after a manual install
-        elif y < GRID_Y - 2 and 110 <= x < 290:
+        elif zone == "tabs":
             if self._fav_side(x):
                 self.favorites_only = not self.favorites_only
             else:
                 self.tag = self.next_tag()
             self.page = 0
             self.app.show()
-        elif y >= self.prev[1] - 8 and x < 160:
+        elif zone == "left":
             if self._prev_side(x):
                 self.turn(-1)
             else:
-                self.set_view("grid" if x < VIEW[0] + VIEW[2] // 2 else "list")
-        elif y >= self.next[1] - 8 and x >= W - 140:
+                self.set_view("grid" if x < L.VIEW[0] + L.VIEW[2] // 2 else "list")
+        elif zone == "next":
             self.turn(1)
         else:
             e, tile = self._card_at(x, y)
@@ -373,20 +406,23 @@ class DetailScreen(Screen):
             tags.append(("beta", ui.WARN))
         if m.get("license"):
             tags.append((m["license"], ui.DIM))
-        x0 = 186
+        W, H = L.W, L.H
+        x0 = L.DETAIL_X
+        top = L.PIC_AT[1]
         # The description's lines are the screen's largest text bitmaps (up
         # to 1 KB each), so they're made first, while the heap still has the
         # big gaps the list screen left.
-        y = 76 + (22 if author else 0) + 20 + 30
+        y = top + 28 + (22 if author else 0) + 20 + 30
         lines = []
         rest = desc
         width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
-        while rest and y + 16 <= 276:
-            left = x0 if y < 212 else 12
+        bottom, left_full = L.DESC_BOTTOM, L.DESC_LEFT
+        while rest and y + 16 <= bottom:
+            left = x0 if y < L.PIC_BOTTOM else left_full
             line = C.wrap(rest, width_of, W - left - 12)[0]
             rest = rest[len(line):].lstrip(" ")
-            if rest and y + 34 > 276:  # last line that fits
-                line = C.ellipsize(line + " " + rest, width_of, W - left - 12 if left == x0 else 300)
+            if rest and y + 34 > bottom:  # last line that fits
+                line = C.ellipsize(line + " " + rest, width_of, W - left - 12 if left == x0 else L.DESC_LAST_W)
                 rest = ""
             lines.append(ui.text(ui.BODY, line, ui.TEXT, left, y, (0, 0)))
             y += 18
@@ -395,20 +431,22 @@ class DetailScreen(Screen):
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
         g.append(ui.rect(0, 0, W, 3, ui.kind_color(e.kind)))
-        self.back = ui.Button("Back", 8, 8, 84, 30)
+        self.back = ui.Button("Back", *L.BACK_BTN)
         g.append(self.back.group)
-        self.heart_rect = (424, 8, 48, 30)
-        g.append(ui.outlined(424, 8, 48, 30, ui.PANEL, ui.LINE))  # the heart's toggle is its feedback
-        self.heart = ui.heart_tile(e.slug in app.state.favorites, 442, 18)
+        self.heart_rect = L.HEART_BTN
+        g.append(ui.outlined(*L.HEART_BTN, ui.PANEL, ui.LINE))  # the heart's toggle is its feedback
+        self.heart = ui.heart_tile(e.slug in app.state.favorites, *L.HEART_AT)
         g.append(self.heart)
 
-        g.append(ui.outlined(11, 47, 162, 162, ui.THUMB_BG, ui.LINE, 1))
-        g.append(ui.thumbnail(app.path(e.slug, "large.bmp"), 12, 48, 160, e.version))
+        pic, size = L.PIC
+        px, py = L.PIC_AT
+        g.append(ui.outlined(px - 1, py - 1, size + 2, size + 2, ui.THUMB_BG, ui.LINE, 1))
+        g.append(ui.thumbnail(app.path(e.slug, pic), px, py, size, e.version))
 
         tf = ui.title_font(e.name)
-        name = C.ellipsize(e.name, lambda s: ui.width(tf, s), W - x0 - 60)
-        g.append(ui.text(tf, name, ui.FG, x0, 48, (0, 0)))
-        y = 76
+        name = C.ellipsize(e.name, lambda s: ui.width(tf, s), W - x0 - L.NAME_W_PAD)
+        g.append(ui.text(tf, name, ui.FG, x0, top, (0, 0)))
+        y = top + 28
         if author:
             g.append(ui.text(ui.BODY, C.ellipsize("by " + author, lambda s: ui.width(ui.BODY, s), W - x0 - 12),
                              ui.DIM, x0, y, (0, 0)))
@@ -418,7 +456,7 @@ class DetailScreen(Screen):
         tx = x0
         for label, color in tags:
             w = ui.width(ui.SMALL, label) + 14
-            if tx + w > W - 8:
+            if tx + w > L.W - 8:
                 break
             g.append(ui.outlined(tx, y, w, 20, ui.PANEL, ui.LINE, 3))
             g.append(ui.text(ui.SMALL, label, color, tx + w // 2, y + 10, (0.5, 0.5)))
@@ -448,10 +486,14 @@ class DetailScreen(Screen):
             label, ready = "Connect FM-1", True
             note, color = (("No FM-1 answered. Is it on and plugged in?", ui.WARN) if app.connect_failed
                            else ("Connect the FM-1 to install.", ui.DIM))
-        self.install = ui.Button(label, 316, 282, 156, 34, fill=ui.CYAN if ready else ui.BG,
+        self.install = ui.Button(label, *L.INSTALL_BTN, fill=ui.CYAN if ready else ui.BG,
                                  edge=ui.CYAN if ready else ui.LINE, color=ui.BG if ready else ui.LINE)
         g.append(self.install.group)
-        g.append(ui.text(ui.SMALL, note, color, 12, 299, (0, 0.5)))
+        nx, ny = L.NOTE_AT
+        if L.NOTE_W:
+            g.append(wrapped(ui.SMALL, note, color, nx, ny - 7, L.NOTE_W, (0, 0.5), pitch=14))
+        else:
+            g.append(ui.text(ui.SMALL, note, color, nx, ny, (0, 0.5)))
         return g
 
     def target(self, x, y):
@@ -521,17 +563,19 @@ class ConfirmScreen(Screen):
         title = "Install %s?" % e.name
         width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
         g = displayio.Group()
-        g.append(ui.rect(0, 0, W, H, ui.BG))
-        g.append(ui.outlined(30, 30, 420, 260, ui.PANEL, ui.LINE))
-        g.append(ui.rect(34, 32, 412, 3, ui.kind_color(e.kind)))
+        g.append(ui.rect(0, 0, L.W, L.H, ui.BG))
+        px, py, pw, ph = L.CONFIRM_PANEL
+        g.append(ui.outlined(px, py, pw, ph, ui.PANEL, ui.LINE))
+        g.append(ui.rect(px + 4, py + 2, pw - 8, 3, ui.kind_color(e.kind)))
         tf = ui.title_font(title)
-        g.append(ui.text(tf, C.ellipsize(title, lambda s: ui.width(tf, s), 380), ui.FG, 50, 52, (0, 0)))
-        y = 92
-        for line in C.wrap(msg, width_of, 380)[:7]:
-            g.append(ui.text(ui.BODY, line, ui.TEXT, 50, y, (0, 0)))
+        tx, ty = L.CONFIRM_TITLE_AT
+        g.append(ui.text(tf, C.ellipsize(title, lambda s: ui.width(tf, s), L.CONFIRM_W), ui.FG, tx, ty, (0, 0)))
+        y = L.CONFIRM_TEXT_Y
+        for line in C.wrap(msg, width_of, L.CONFIRM_W)[:L.CONFIRM_LINES]:
+            g.append(ui.text(ui.BODY, line, ui.TEXT, tx, y, (0, 0)))
             y += 19
-        self.cancel = ui.Button("Cancel", 50, 234, 170, 40)
-        self.go = ui.Button("Install", 260, 234, 170, 40, fill=ui.CYAN if ready else ui.BG,
+        self.cancel = ui.Button("Cancel", *L.CANCEL_BTN)
+        self.go = ui.Button("Install", *L.GO_BTN, fill=ui.CYAN if ready else ui.BG,
                             edge=ui.CYAN if ready else ui.LINE, color=ui.BG if ready else ui.LINE)
         g.append(self.cancel.group)
         g.append(self.go.group)
@@ -562,7 +606,6 @@ class ProgressScreen(Screen):
     """Install progress: the phase, a bar, elapsed time and hints. The
     installer drives it through phase(), wait() and finish()."""
 
-    BAR = (40, 156, 400, 26)
     KEEP = Screen.KEEP + ("entry", "t0", "waiting_since", "done", "last_draw")
     LONG_WAIT_S = 20
 
@@ -576,16 +619,17 @@ class ProgressScreen(Screen):
 
     def build(self):
         e = self.entry
+        W, H = L.W, L.H
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
         g.append(ui.rect(0, 0, W, 3, ui.kind_color(e.kind)))
         tf = ui.title_font(e.name)
-        self.title = ui.text(tf, C.ellipsize("Installing %s" % e.name, lambda s: ui.width(tf, s), 440),
-                             ui.FG, W // 2, 50, (0.5, 0))
+        self.title = ui.text(tf, self._fit(tf, "Installing %s" % e.name, L.PROGRESS_TITLE_W),
+                             ui.FG, W // 2, L.PROGRESS_TITLE_Y, (0.5, 0))
         g.append(self.title)
-        self.sub = ui.text(ui.BODY, "Keep the FM-1 on and connected.", ui.DIM, W // 2, 84, (0.5, 0))
+        self.sub = ui.text(ui.BODY, "Keep the FM-1 on and connected.", ui.DIM, W // 2, L.PROGRESS_SUB_Y, (0.5, 0))
         g.append(self.sub)
-        bx, by, bw, bh = self.BAR
+        bx, by, bw, bh = L.BAR
         self.phase_label = ui.text(ui.NAME, "Preparing", ui.FG, bx, by - 10, (0, 1))
         g.append(self.phase_label)
         self.pct = ui.text(ui.NAME, "", ui.FG, bx + bw, by - 10, (1, 1))
@@ -598,16 +642,33 @@ class ProgressScreen(Screen):
         g.append(self.fill_group)
         self.elapsed = ui.text(ui.SMALL, "Elapsed 0:00", ui.DIM, bx, by + bh + 14, (0, 0.5))
         g.append(self.elapsed)
-        self.note = ui.text(ui.BODY, " ", ui.WARN, W // 2, 232, (0.5, 0.5))
+        # The note is two lines (the second blank unless it wraps), so a long
+        # hint fits a narrow screen.
+        self.note = ui.text(ui.BODY, " ", ui.WARN, W // 2, L.PROGRESS_NOTE_Y, (0.5, 0.5))
+        self.note2 = ui.text(ui.BODY, " ", ui.WARN, W // 2, L.PROGRESS_NOTE_Y + 18, (0.5, 0.5))
         g.append(self.note)
-        self.ok = ui.Button("OK", 170, 266, 140, 40, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
+        g.append(self.note2)
+        self.ok = ui.Button("OK", *L.OK_BTN, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
         self.ok.group.hidden = True
         g.append(self.ok.group)
         self.group = g
         return g
 
+    @staticmethod
+    def _fit(font, s, width):
+        return C.ellipsize(s, lambda t: ui.width(font, t), width)
+
+    def _note(self, s, color=None):
+        """The note, on two lines if it's wider than the screen."""
+        width_of = lambda t: ui.width(ui.BODY, t)  # noqa: E731
+        parts = C.wrap(s, width_of, L.W - 24) if width_of(s) > L.W - 24 else [s]
+        for label, part in ((self.note, parts[0]), (self.note2, " ".join(parts[1:]) or " ")):
+            if color is not None:
+                label.color = color
+            label.set(part)
+
     def _bar(self, pct, color=None):
-        bx, by, bw, bh = self.BAR
+        bx, by, bw, bh = L.BAR
         w = max(1, (bw - 6) * pct // 100)
         self.fill.width = w
         if color is not None:
@@ -622,7 +683,7 @@ class ProgressScreen(Screen):
         """Installer status callback."""
         if self.waiting_since is not None:
             self.waiting_since = None
-            self.note.set(" ")
+            self._note(" ")
         self.phase_label.set(name)
         self.pct.set("%d%%" % pct)
         self._bar(pct)
@@ -631,21 +692,20 @@ class ProgressScreen(Screen):
     def wait(self, what, note="Waiting for the FM-1 to restart..."):
         """The installer is waiting for the FM-1 to come back."""
         self.waiting_since = time.monotonic()
-        self.note.color = ui.WARN
-        self.note.set(note)
+        self._note(note, ui.WARN)
         self.redraw(force=True)
 
     def found(self):
         if self.waiting_since is not None:
             self.waiting_since = None
-            self.note.set(" ")
+            self._note(" ")
             self.redraw(force=True)
 
     def tick(self, now):
         if self.done is not None:
             return
         if self.waiting_since is not None and now - self.waiting_since > self.LONG_WAIT_S:
-            self.note.set("If it doesn't come back, turn the FM-1 off and on again.")
+            self._note("If it doesn't come back, turn the FM-1 off and on again.")
         self.redraw()
 
     def redraw(self, force=False):
@@ -665,15 +725,13 @@ class ProgressScreen(Screen):
             self.pct.set("100%")
             self._bar(100, ui.OK)
             self.sub.set(" ")
-            self.note.color = ui.DIM
-            self.note.set(message or " ")
+            self._note(message or " ", ui.DIM)
         else:
             self.title.set("Install failed")
             self.title.color = ui.BAD
-            self.sub.set(message[:60] if message else " ")
-            self._bar(max(1, self.fill.width * 100 // (self.BAR[2] - 6)), ui.BAD)
-            self.note.color = ui.WARN
-            self.note.set("Power-cycle the FM-1; the firmware it had still boots.")
+            self.sub.set(self._fit(ui.BODY, message[:60], L.W - 24) if message else " ")
+            self._bar(max(1, self.fill.width * 100 // (L.BAR[2] - 6)), ui.BAD)
+            self._note("Power-cycle the FM-1; the firmware it had still boots.", ui.WARN)
         self.ok.group.hidden = False
         self.app.refresh()
 
