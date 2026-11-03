@@ -105,7 +105,8 @@ class Canvas:
         ax, ay = anchor
         x0 = int(x - ax * f.width(s)) - pad
         y0 = int(y - ay * f.cap) - (f.ascent - f.cap) - self.top
-        if y0 < 0 or y0 + f.height > self.bmp.height:
+        sy1, sy2 = max(0, -y0), min(f.height, self.bmp.height - y0)  # the rows in the band
+        if sy1 >= sy2:
             return
         pen = pad
         for o in rows:
@@ -116,7 +117,7 @@ class Canvas:
                 gx = x0 + pen + left
                 sx = t[o + 2] | (t[o + 3] << 8)
                 if 0 <= gx and gx + gw <= self.bmp.width:
-                    bitmaptools.blit(self.bmp, sheet, gx, y0, x1=sx, y1=0, x2=sx + gw, y2=f.height,
+                    bitmaptools.blit(self.bmp, sheet, gx, y0 + sy1, x1=sx, y1=sy1, x2=sx + gw, y2=sy2,
                                      skip_source_index=0)
             pen += t[o + 6]
 
@@ -280,103 +281,10 @@ class Highlight(displayio.Group):
         self.hidden = True
 
 
-class ScrollList(S.ListScreen):
-    """ListScreen whose pages scroll with the finger."""
-
-    KEEP = S.ListScreen.KEEP + ("flat",)
-
-    def __init__(self, app):
-        super().__init__(app)
-        self.flat = {"key": None, "pages": {}}
-        self.dragging = False
-
-    def release(self):
-        # The cached pages' TileGrids go into the next build's strip, and a
-        # TileGrid can be in one group at a time.
-        strip = getattr(self, "strip", None)
-        while strip is not None and len(strip):
-            strip.pop()
-        super().release()
-
-    # -- pages ------------------------------------------------------------------
-
-    def _key(self):
-        st = self.app.state
-        return (self.tag, self.favorites_only, st.view, self.app.installed_slug(),
-                tuple(sorted(st.favorites)), id(self.app.index))
-
-    def _page(self, n, finish=True):
-        """Page n, from the cache or started; finished unless finish=False."""
-        pages = self.flat["pages"]
-        p = pages.get(n)
-        if p is None:
-            per = self.per_page()
-            entries = [self.app.index.entry(i) for i in C.page_slice(self._items, n, per)]
-            p = pages[n] = Page(self, n, entries, self.flat["installed"])
-        return p.finish() if finish else p
-
-    def _neighbours(self):
-        return [n for n in (self.page + 1, self.page - 1) if 0 <= n < self.pages]
-
-    def card(self, e, x, y, installed, slot):
-        return displayio.Group()  # the page's bitmap has the cards
-
-    def row(self, e, x, y, installed):
-        return displayio.Group()
-
-    def build(self):
-        self.dragging = False
-        key = self._key()
-        if key != self.flat["key"]:
-            self.flat = {"key": key, "pages": {}, "installed": key[3]}
-        g = super().build()
-        self._items = self.items()
-        self.cards = []
-        if not self._items:
-            return g
-        keep = (self.page - 1, self.page, self.page + 1)
-        pages = self.flat["pages"]
-        for n in list(pages):
-            if n not in keep:
-                del pages[n]
-        cur = self._page(self.page)
-        self.strip = displayio.Group()
-        self.strip.append(cur.grid())
-        cur.tile.x = 0
-        for n in self._neighbours():
-            p = pages.get(n)
-            if p is not None and p.done():
-                self._attach(p)
-        g.append(self.strip)
-        self.highlight = Highlight()
-        g.append(self.highlight)
-        return g
-
-    def _attach(self, p):
-        """Put a finished neighbour page in the strip, beside the current one."""
-        t = p.grid()
-        t.x = (p.n - self.page) * L.W
-        for i in range(len(self.strip)):
-            if self.strip[i] is t:
-                return
-        self.strip.append(t)
-
-    def _ready(self, n):
-        """Page n drawn and in the strip (drawn now if it wasn't)."""
-        self._attach(self._page(n))
-
-    def tick(self, now):
-        """Draw the neighbours a card at a time between touches."""
-        if self.dragging or not getattr(self, "_items", None):
-            return
-        for n in self._neighbours():
-            p = self._page(n, finish=False)
-            if not p.done():
-                if p.step():
-                    self._attach(p)
-                return
-
-    # -- moving -----------------------------------------------------------------
+class Scroller:
+    """Dragging a strip of pages: self.page of self.pages is in place at
+    strip.x = 0. The screen provides _ready(n) (page n drawn and in the
+    strip), _turned(d) (now on page + d) and _scrolling() (anything to move)."""
 
     def _offset(self, dx):
         """The strip's x for a drag of dx, with a rubber band past the ends."""
@@ -384,8 +292,11 @@ class ScrollList(S.ListScreen):
             return dx // 3
         return max(-L.W, min(L.W, dx))
 
+    def _neighbours(self):
+        return [n for n in (self.page + 1, self.page - 1) if 0 <= n < self.pages]
+
     def drag(self, dx, x0, y0):
-        if not getattr(self, "_items", None) or self.pages < 1:
+        if not self._scrolling():
             return
         if not self.dragging:
             self.dragging = True
@@ -429,13 +340,9 @@ class ScrollList(S.ListScreen):
             self.strip.x = int(start + (target - start) * e)
             self.app.refresh()
 
-    def _turned(self, d):
-        self.page += d
-        self.app.show()  # the header and footer for the new page; pages from the cache
-
     def turn(self, delta):
         page = self.page + delta
-        if not getattr(self, "_items", None) or not 0 <= page < self.pages:
+        if not self._scrolling() or not 0 <= page < self.pages:
             return
         self._ready(page)
         self._glide(-delta * L.W)
@@ -443,6 +350,114 @@ class ScrollList(S.ListScreen):
 
     def swipe(self, dx):
         pass  # drags do it
+
+    def _attach_tile(self, t, n):
+        """Put page n's TileGrid in the strip, beside the current page."""
+        t.x = (n - self.page) * L.W
+        for i in range(len(self.strip)):
+            if self.strip[i] is t:
+                return
+        self.strip.append(t)
+
+    def _empty_strip(self):
+        # The cached pages' TileGrids go into the next build's strip, and a
+        # TileGrid can be in one group at a time.
+        strip = getattr(self, "strip", None)
+        while strip is not None and len(strip):
+            strip.pop()
+
+
+class ScrollList(Scroller, S.ListScreen):
+    """ListScreen whose pages scroll with the finger."""
+
+    KEEP = S.ListScreen.KEEP + ("flat",)
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.flat = {"key": None, "pages": {}}
+        self.dragging = False
+
+    def release(self):
+        self._empty_strip()
+        super().release()
+
+    def _scrolling(self):
+        return bool(getattr(self, "_items", None))
+
+    # -- pages ------------------------------------------------------------------
+
+    def _key(self):
+        st = self.app.state
+        return (self.tag, self.favorites_only, st.view, self.app.installed_slug(),
+                tuple(sorted(st.favorites)), id(self.app.index))
+
+    def _page(self, n, finish=True):
+        """Page n, from the cache or started; finished unless finish=False."""
+        pages = self.flat["pages"]
+        p = pages.get(n)
+        if p is None:
+            per = self.per_page()
+            entries = [self.app.index.entry(i) for i in C.page_slice(self._items, n, per)]
+            p = pages[n] = Page(self, n, entries, self.flat["installed"])
+        return p.finish() if finish else p
+
+    def card(self, e, x, y, installed, slot):
+        return displayio.Group()  # the page's bitmap has the cards
+
+    def row(self, e, x, y, installed):
+        return displayio.Group()
+
+    def build(self):
+        self.dragging = False
+        key = self._key()
+        if key != self.flat["key"]:
+            self.flat = {"key": key, "pages": {}, "installed": key[3]}
+        g = super().build()
+        self._items = self.items()
+        self.cards = []
+        if not self._items:
+            return g
+        keep = (self.page - 1, self.page, self.page + 1)
+        pages = self.flat["pages"]
+        for n in list(pages):
+            if n not in keep:
+                del pages[n]
+        cur = self._page(self.page)
+        self.strip = displayio.Group()
+        self.strip.append(cur.grid())
+        cur.tile.x = 0
+        for n in self._neighbours():
+            p = pages.get(n)
+            if p is not None and p.done():
+                self._attach(p)
+        g.append(self.strip)
+        self.highlight = Highlight()
+        g.append(self.highlight)
+        return g
+
+    def _attach(self, p):
+        self._attach_tile(p.grid(), p.n)
+
+    def _ready(self, n):
+        """Page n drawn and in the strip (drawn now if it wasn't)."""
+        self._attach(self._page(n))
+
+    def tick(self, now):
+        """Draw the neighbours a card at a time between touches."""
+        if self.dragging or not getattr(self, "_items", None):
+            return
+        for n in self._neighbours():
+            p = self._page(n, finish=False)
+            if not p.done():
+                if p.step():
+                    self._attach(p)
+                return
+
+    # -- moving -----------------------------------------------------------------
+
+    def _turned(self, d):
+        self.page += d
+        self.app.show()  # the header and footer for the new page; pages from the cache
 
     # -- taps on the cards ---------------------------------------------------------
 
@@ -452,10 +467,11 @@ class ScrollList(S.ListScreen):
         p = self.flat["pages"].get(self.page)
         if p is None or self.strip.x != 0:
             return None, None, None
-        for e, card, heart, heart_at in p.cards:
+        for i, (e, card, heart, heart_at) in enumerate(p.cards):
             if S._hit(heart, x, y):
                 return e, heart_at, card
             if S._hit(card, x, y):
+                self._tapped = self.page * self.per_page() + i
                 return e, None, card
         return None, None, None
 
@@ -481,7 +497,175 @@ class ScrollList(S.ListScreen):
             p.canvas.heart(on, *heart)
             self.app.refresh()
         elif e is not None:
-            self.app.push(S.DetailScreen(self.app, e))
+            self.app.push(ScrollDetail(self.app, e, list(self._items), self._tapped))
+
+
+# -- the details --------------------------------------------------------------
+
+def detail_band():
+    """(top, height) of the part of the details screen that scrolls: from
+    under Back to above the Install bar."""
+    top = L.BACK_BTN[1] + L.BACK_BTN[3]
+    return top, L.INSTALL_BTN[1] - 4 - top
+
+
+class DetailPage:
+    """One firmware's details (DetailScreen.build's middle) as a Canvas."""
+
+    def __init__(self, app, n, entry):
+        self.app = app
+        self.n = n
+        self.entry = entry
+        top, h = detail_band()
+        self.canvas = Canvas(L.W, top, h)
+        self.tile = None
+        self.work = self.steps()
+
+    done, step, finish = Page.done, Page.step, Page.finish
+
+    def grid(self):
+        if self.tile is None:
+            self.tile = displayio.TileGrid(self.canvas.bmp, pixel_shader=self.canvas.pal, y=self.canvas.top)
+        return self.tile
+
+    def steps(self):
+        import json
+        e, app, cv = self.entry, self.app, self.canvas
+        try:
+            with open(app.path(e.slug, "meta.json")) as f:
+                m = json.load(f)
+        except (OSError, ValueError):
+            m = {}
+        pic, size = L.PIC
+        px, py = L.PIC_AT
+        cv.outlined(px - 1, py - 1, size + 2, size + 2, ui.THUMB_BG, ui.LINE, 1)
+        cv.picture(app.path(e.slug, pic), px, py, size, e.version, 0)
+        yield
+        author = m.get("author") or ""
+        desc = m.get("description") or ""
+        nbytes = m.get("bytes")
+        info = "  ".join(s for s in (C.version_label(e.version), e.product,
+                                     "%d KB" % (nbytes // 1024) if nbytes else "") if s)
+        tags = [(g, ui.kind_color(g)) for g in e.genre.split(",") if g]
+        if e.beta:
+            tags.append(("beta", ui.WARN))
+        if m.get("license"):
+            tags.append((m["license"], ui.DIM))
+        W = L.W
+        x0 = L.DETAIL_X
+        top = py
+        tf = ui.title_font(e.name)
+        name = C.ellipsize(e.name, lambda s: ui.width(tf, s), W - x0 - L.NAME_W_PAD)
+        cv.text(tf, name, ui.FG, x0, top, (0, 0))
+        y = top + 28
+        if author:
+            cv.text(ui.BODY, C.ellipsize("by " + author, lambda s: ui.width(ui.BODY, s), W - x0 - 12),
+                    ui.DIM, x0, y, (0, 0))
+            y += 22
+        cv.text(ui.SMALL, info, ui.DIM, x0, y, (0, 0))
+        y += 20
+        tx = x0
+        for label, color in tags:
+            w = ui.width(ui.SMALL, label) + 14
+            if tx + w > W - 8:
+                break
+            cv.outlined(tx, y, w, 20, ui.PANEL, ui.LINE, 3)
+            cv.text(ui.SMALL, label, color, tx + w // 2, y + 10, (0.5, 0.5))
+            tx += w + 6
+        y += 30
+        rest = desc
+        width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
+        bottom, left_full = L.DESC_BOTTOM, L.DESC_LEFT
+        while rest and y + 16 <= bottom:
+            left = x0 if y < L.PIC_BOTTOM else left_full
+            line = C.wrap(rest, width_of, W - left - 12)[0]
+            rest = rest[len(line):].lstrip(" ")
+            if rest and y + 34 > bottom:
+                line = C.ellipsize(line + " " + rest, width_of, W - left - 12 if left == x0 else L.DESC_LAST_W)
+                rest = ""
+            cv.text(ui.BODY, line, ui.TEXT, left, y, (0, 0))
+            y += 18
+
+
+class ScrollDetail(Scroller, S.DetailScreen):
+    """DetailScreen that drags to the previous or next firmware of the list
+    it was opened from (its filters, its order). Only Back goes back."""
+
+    KEEP = S.DetailScreen.KEEP + ("order", "page", "flat")
+
+    def __init__(self, app, entry, order, pos):
+        super().__init__(app, entry)
+        self.order = order  # the list's index positions
+        self.page = pos
+        self.flat = {}
+        self.dragging = False
+
+    @property
+    def pages(self):
+        return len(self.order)
+
+    def release(self):
+        self._empty_strip()
+        super().release()
+
+    def _scrolling(self):
+        return True
+
+    def _page(self, n, finish=True):
+        p = self.flat.get(n)
+        if p is None:
+            p = self.flat[n] = DetailPage(self.app, n, self.app.index.entry(self.order[n]))
+        return p.finish() if finish else p
+
+    def _ready(self, n):
+        self._attach_tile(self._page(n).grid(), n)
+
+    def build(self):
+        self.dragging = False
+        e, app = self.entry, self.app
+        for n in list(self.flat):
+            if abs(n - self.page) > 1:
+                del self.flat[n]
+        W, H = L.W, L.H
+        g = displayio.Group()
+        g.append(ui.rect(0, 0, W, H, ui.BG))
+        self.strip = displayio.Group()
+        self._attach_tile(self._page(self.page).grid(), self.page)
+        for n in self._neighbours():
+            p = self.flat.get(n)
+            if p is not None and p.done():
+                self._attach_tile(p.grid(), n)
+        g.append(self.strip)
+        g.append(ui.rect(0, 0, W, 3, ui.kind_color(e.kind)))
+        self.back = ui.Button("Back", *L.BACK_BTN)
+        g.append(self.back.group)
+        self.heart_rect = L.HEART_BTN
+        g.append(ui.outlined(*L.HEART_BTN, ui.PANEL, ui.LINE))
+        self.heart = ui.heart_tile(e.slug in app.state.favorites, *L.HEART_AT)
+        g.append(self.heart)
+        self.bar_at = len(g)
+        g.append(self.bar())
+        self.group = g
+        return g
+
+    def tick(self, now):
+        if self.dragging:
+            return
+        for n in self._neighbours():
+            p = self._page(n, finish=False)
+            if not p.done():
+                if p.step():
+                    self._attach_tile(p.grid(), n)
+                return
+
+    def _turned(self, d):
+        self.page += d
+        self.entry = self.app.index.entry(self.order[self.page])
+        self.meta = None
+        under = self.app.stack[-2] if len(self.app.stack) > 1 else None
+        if isinstance(under, ScrollList):  # Back lands on this one's page
+            under.page = self.page // under.per_page()
+        self.app.show()
 
 
 def list_screen(app):
