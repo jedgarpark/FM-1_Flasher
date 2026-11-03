@@ -4,6 +4,7 @@
 
   tools/make_splash.py --font ~/Library/Fonts/Gotham-Black.ttf \
       --bg 000000 --fg b061ff --out art/splash_text.png
+  tools/make_splash.py --font ... --size 320x240 --out art/splash_text_320.png   # the Metro ESP32-P4
 
 Same layout as art/fff_splash.png: "FM-1" large, "FIRMWARE" and "FLASHER"
 small, centred. The font isn't in the repo (any heavy sans works); only the
@@ -13,8 +14,8 @@ import argparse
 
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 480, 320
-# (text, cap height, top of the caps), measured from art/fff_splash.png
+# (text, cap height, top of the caps) at 480x320, measured from
+# art/fff_splash.png; other sizes scale them.
 LINES = (("FM-1", 66, 72), ("FIRMWARE", 27, 146), ("FLASHER", 27, 180))
 
 
@@ -37,12 +38,17 @@ def main():
     ap.add_argument("--bg", default="000000", help="background, hex RGB")
     ap.add_argument("--fg", default="b061ff", help="text, hex RGB")
     ap.add_argument("--out", default="art/splash_text.png")
+    ap.add_argument("--size", default="480x320", help="480x320 (v1) or 320x240 (Metro ESP32-P4)")
     a = ap.parse_args()
-    im = Image.new("RGB", (W, H), colour(a.bg))
+    w, _, h = a.size.partition("x")
+    w, h = int(w), int(h)
+    k = h / 320
+    im = Image.new("RGB", (w, h), colour(a.bg))
     d = ImageDraw.Draw(im)
     for text, cap, top in LINES:
+        cap, top = round(cap * k), round(top * k)
         # "ls" anchors at the baseline; caps sit cap pixels above it.
-        d.text((W // 2, top + cap), text, font=font_for(a.font, cap),
+        d.text((w // 2, top + cap), text, font=font_for(a.font, cap),
                fill=colour(a.fg), anchor="ms")
     im.save(a.out)
     print("wrote", a.out)

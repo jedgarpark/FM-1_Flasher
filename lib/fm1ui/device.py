@@ -212,6 +212,13 @@ class Touch:
         return ev
 
 
+# Everything above is v1's hardware (Feather RP2350, TFT FeatherWing). On a
+# Metro ESP32-P4 the same names come from fm1ui.metro_p4 instead, which v1
+# never loads (docs/PLAN-v2.md).
+if getattr(board, "board_id", "") == "adafruit_metro_esp32p4":
+    from fm1ui.metro_p4 import (W, H, TOUCH_CAL, SPLASH, SPLASH_HOLD, display_setup, splash,  # noqa: F811
+                                display_redo, host_setup, mount_sd, Touch)
+
 # fm1proto.frame(CMD_IDENTITY): the identity query, which never changes
 IDENTITY_QUERY = bytes.fromhex("f0003245000000407ff7")
 CMD_IDENTITY = 17

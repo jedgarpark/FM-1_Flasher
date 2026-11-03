@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""The Metro ESP32-P4's hardware for fm1ui.device (docs/PLAN-v2.md, Phase 1).
+
+fm1ui.device imports these over its own (v1's Feather RP2350 and TFT
+FeatherWing) when it runs on a Metro ESP32-P4, so v1 never loads this file:
+
+- display: the 2.8" TFT Touch Shield's ILI9341, 320x240, on board.SPI()
+  through the ICSP header (CS D10, DC D9), no jumpers;
+- touch: its FT6206 on I2C at 0x38, reporting portrait;
+- SD card: the Metro's own slot, 4-bit SDIO, on pins of its own (so the
+  card never shares a bus with the display, unlike v1, DEVNOTES 6.18);
+- USB host: the P4's USB-A port (needs the 512-byte enumeration buffer
+  build with the TinyUSB DWC2 abort fix).
+"""
+import time
+
+import board
+import displayio
+import fourwire
+import supervisor
+
+import fm1usb
+from fm1ui import app as A
+
+W, H = 320, 240
+# The FT6206 reports the panel's portrait frame: x = 319 - raw y, y = raw x,
+# as (ax, bx, ay, by) for x = ax * raw_y + bx, y = ay * raw_x + by. Measured
+# with device/metro_spike_display.py (the dot followed the finger).
+TOUCH_CAL = (-1, 319, 1, 0)
+
+_host = None  # (power pin, usb_host.Port): kept alive for usb.core
+
+SPLASH = "/splash.bmp"  # art/splash_text_320.png (tools/deploy.py --board metro-p4)
+SPLASH_HOLD = 2.0  # seconds the splash stays up after display_redo()
+_splash_bmp = None
+
+
+def _started():
+    return supervisor.runtime.run_reason == supervisor.RunReason.STARTUP
+
+
+def display_setup():
+    import adafruit_ili9341
+    displayio.release_displays()
+    spi = board.SPI()
+    bus = fourwire.FourWire(spi, command=board.D9, chip_select=board.D10, baudrate=40_000_000)
+    return adafruit_ili9341.ILI9341(bus, width=W, height=H, auto_refresh=False), spi
+
+
+def _show_splash(display):
+    g = displayio.Group()
+    g.append(displayio.TileGrid(_splash_bmp, pixel_shader=_splash_bmp.pixel_shader))
+    display.root_group = g
+    display.refresh()
+
+
+def splash(display):
+    """After a start (not a reload), show the splash until the first screen."""
+    global _splash_bmp
+    if not _started():
+        return
+    try:
+        _splash_bmp = displayio.OnDiskBitmap(SPLASH)
+    except OSError:
+        return
+    _show_splash(display)
+
+
+def display_redo(display):
+    """v1 sends its panel's setup again here (DEVNOTES 6.20); the shield
+    hasn't needed that. Holds the splash SPLASH_HOLD s, as v1 does."""
+    global _splash_bmp
+    if not _started() or _splash_bmp is None:
+        return
+    prev = display.root_group
+    _show_splash(display)
+    time.sleep(SPLASH_HOLD)
+    display.root_group = prev
+    _splash_bmp = None
+
+
+def host_setup(spi):
+    """5 V on the USB-A port and the host on it. The FM-1 stays enumerated
+    through a soft reload, so transports clear its endpoints' data toggles
+    (fm1usb.CLEAR_HALT)."""
+    global _host
+    if _host is None:
+        import digitalio
+        import usb_host
+        power = digitalio.DigitalInOut(board.USB_HOST_POWER)
+        power.switch_to_output(value=True)
+        _host = (power, usb_host.Port(board.USB_HOST_DP, board.USB_HOST_DM))
+    fm1usb.CLEAR_HALT = True
+
+
+def mount_sd(spi):
+    """Mount the Metro's microSD at /sd. False if there is no card."""
+    import storage
+    try:
+        storage.getmount("/sd")
+        return True  # mounted before a soft reload
+    except OSError:
+        pass
+    try:
+        import sdioio
+        sd = sdioio.SDCard(clock=board.SD_CLK, command=board.SD_CMD,
+                           data=[board.SD_DATA0, board.SD_DATA1, board.SD_DATA2, board.SD_DATA3],
+                           frequency=40_000_000)
+        storage.mount(storage.VfsFat(sd), "/sd")
+        return True
+    except (OSError, ValueError, RuntimeError):
+        return False
+
+
+class Touch:
+    """FT6206 polled into taps and swipes, in display coordinates."""
+
+    def __init__(self, cal=TOUCH_CAL, debug=False):
+        import adafruit_focaltouch
+        self.ft = adafruit_focaltouch.Adafruit_FocalTouch(board.I2C())
+        self.cal = cal
+        self.debug = debug
+        self.first = None
+        self.gestures = A.Gestures()
+
+    def map(self, x, y):
+        ax, bx, ay, by = self.cal
+        return (min(W - 1, max(0, int(ax * y + bx))),
+                min(H - 1, max(0, int(ay * x + by))))
+
+    def raw(self):
+        try:
+            pts = self.ft.touches
+            if pts:
+                return pts[0]["x"], pts[0]["y"]
+        except OSError:  # an I2C hiccup reads as no touch
+            pass
+        return None
+
+    def event(self):
+        p = self.raw()
+        if self.debug and p and self.first is None:
+            self.first = p
+        self.gestures.sample(self.map(*p) if p else None)
+        ev = self.gestures.event()
+        if self.debug and p is None and self.first is not None:
+            print("touch raw", self.first, "mapped", self.map(*self.first), "->", ev)
+            self.first = None
+        return ev

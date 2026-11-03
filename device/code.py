@@ -30,10 +30,11 @@ pending = D.pending_install()
 if root is None:
     import displayio
     D.display_redo(display)  # after a start, not a reload
+    w, h = display.width, display.height
     g = displayio.Group()
-    g.append(ui.rect(0, 0, 480, 320, ui.BG))
-    g.append(ui.text(ui.NAME, "No firmware found", ui.FG, 240, 140, (0.5, 0.5)))
-    g.append(ui.text(ui.BODY, "Put the card from tools/make_sd.py in the wing's slot.", ui.DIM, 240, 170, (0.5, 0.5)))
+    g.append(ui.rect(0, 0, w, h, ui.BG))
+    g.append(ui.text(ui.NAME, "No firmware found", ui.FG, w // 2, h // 2 - 20, (0.5, 0.5)))
+    g.append(ui.text(ui.BODY, "Put a card from tools/make_sd.py in the slot.", ui.DIM, w // 2, h // 2 + 10, (0.5, 0.5)))
     display.root_group = g
     display.refresh()
     while True:
