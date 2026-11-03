@@ -183,6 +183,15 @@ catalogue had then, with no `.part` files left; the only differences from
 the hub were 10 firmwares it added or updated later that day. Pictures:
 137 converted, 7 marked as missing on the hub.
 
+## Scrolling pages (done, 3 November 2026)
+
+- [x] The list's pages follow the finger and glide to the next page, with
+      Settings > Scroll pages to turn it off. displayio draws the list's cards
+      (shapes and text) at 10 fps whatever the SPI clock, so each page is
+      drawn once into one bitmap (`fm1ui/flat.py`): 22 fps at 40 MHz, 29 fps
+      at 80 MHz, 17-24 fps while dragging (`device/metro_spike_scroll.py`).
+      The display now runs at 80 MHz, clean on the shield. Metro only.
+
 ## Phase 3: Battery and release
 
 - [ ] Low-battery warning from `VOLTAGE_MONITOR`; installs on battery
