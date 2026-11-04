@@ -352,6 +352,18 @@ class Install(unittest.TestCase):
         self.assertEqual(dev.identity, "FM-1_015")
         self.assertEqual(len(dev.bank_writes), 36)
 
+    def test_identity_check_retries_an_unanswered_query(self):
+        # Once, Aisling didn't answer the identity check that install() makes
+        # after connect(); the install then failed at once.
+        pkg, meta = P.prepare(stock_meta(), io.BytesIO(stock_bytes()))
+        clock = FakeClock()
+        dev = FakeFM1(pkg, clock, identity="FM-1_353000400", capability=False)
+        up = U.Updater(finder_for(dev), pkg, meta, clock=clock)
+        self.assertTrue(up.connect(force=True)["legacy"])
+        dev.ignore_identity = 1
+        up.install(force=True)
+        self.assertEqual(dev.identity, "FM-1_015")
+
     def test_stock_on_stock_only_restores(self):
         pkg, meta = P.prepare(stock_meta(), io.BytesIO(stock_bytes()))
         clock = FakeClock()

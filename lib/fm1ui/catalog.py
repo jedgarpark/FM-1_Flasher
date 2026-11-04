@@ -5,7 +5,7 @@ The firmware list comes from firmware/index.txt, written by tools/make_sd.py:
 a first line "updated<TAB>date", then one line per firmware with slug, name,
 version, genre, beta (0/1), product, and the dates the hub added it and
 released it (YYYY-MM-DD, or empty; cards written before the lists could sort
-have no date columns). Favourites, the last install and a pending install
+have no date columns). Favourites, the last install and the list's settings
 live in a small JSON state file on the card.
 """
 import json
@@ -174,7 +174,7 @@ def page_slice(items, page, per_page):
 
 
 class State:
-    """Favourites, the last install, a pending install, the list view
+    """Favourites, the last install, the list view
     ("grid" or "list"), its sort (one of SORTS) and whether its pages scroll (boards that can,
     fm1ui.flat), kept in a JSON file.
     Writes are best effort: a read-only card just means nothing is remembered."""
@@ -183,7 +183,6 @@ class State:
         self.path = path
         self.favorites = set()
         self.installed = None  # {"slug": ..., "product": ...}
-        self.pending = None    # slug of an install to run after a reload
         self.view = "grid"
         self.sort = "az"
         self.removed = set()  # slugs removed on the device: updates leave them unticked
@@ -193,7 +192,6 @@ class State:
                 data = json.load(f)
             self.favorites = set(data.get("favorites", ()))
             self.installed = data.get("installed")
-            self.pending = data.get("pending")
             self.view = data.get("view", "grid")
             self.sort = data.get("sort", "az")
             self.removed = set(data.get("removed", ()))
@@ -202,7 +200,7 @@ class State:
             pass
 
     def save(self):
-        data = {"favorites": sorted(self.favorites), "installed": self.installed, "pending": self.pending,
+        data = {"favorites": sorted(self.favorites), "installed": self.installed,
                 "view": self.view, "sort": self.sort, "scroll": self.scroll}
         if self.removed:
             data["removed"] = sorted(self.removed)
@@ -223,7 +221,6 @@ class State:
 
     def record_install(self, slug, product):
         self.installed = {"slug": slug, "product": product}
-        self.pending = None
         self.save()
 
     def installed_slug(self, identity, index):
