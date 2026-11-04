@@ -41,8 +41,8 @@ class Entry:
 
 class Index:
     """The firmware list, left on the card: only where each line starts is
-    kept in RAM (parsed entries would cost the Feather ~20 KB, the lines
-    themselves ~6 KB), and Entry objects are made only for the cards on screen."""
+    kept in RAM (parsed entries would cost ~20 KB, the lines themselves
+    ~6 KB; it was made for the Feather's RAM), and Entry objects are made only for the cards on screen."""
 
     def __init__(self, path):
         self.path = path

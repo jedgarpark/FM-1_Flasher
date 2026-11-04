@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Settings, from the gear on the list (boards with WiFi, the Metro ESP32-P4).
+"""Settings, from the gear on the list.
 
 Settings > WiFi lists the saved networks (join one with a tap, or forget it)
 and adds new ones: scan, pick a network, type its password on the on-screen
 keyboard. app.updater is the board's network (fm1ui.metro_p4.Network): status,
 scan, join, connect and saved (fm1ui.networks.Saved).
-v1 never imports this.
 """
 import displayio
 
@@ -238,18 +237,15 @@ class SettingsScreen(Screen):
         self.wifi_g.append(ui.text(ui.BODY, state, ui.OK if ssid else ui.WARN, x + w - 26, y + h // 2, (1, 0.5)))
         self.wifi_g.append(ui.triangle(x + w - 16, y + h // 2 - 6, 7, 12, ui.DIM, False))
         g.append(self.wifi_g)
-        self.scroll_rect = None
-        if L.SCROLL:
-            self.scroll_rect = (x, y + h + 8, w, h)
-            sx, sy = x, y + h + 8
-            on = self.app.state.scroll
-            self.scroll_g = ui.outlined(*self.scroll_rect, ui.PANEL, ui.LINE)
-            self.scroll_g.append(ui.text(ui.NAME, "Scroll pages", ui.FG, sx + 12, sy + h // 2, (0, 0.5)))
-            self.scroll_g.append(_switch(sx + w - 58, sy + (h - 22) // 2, on))
-            g.append(self.scroll_g)
-        last = self.scroll_rect or self.wifi_rect
-        self.credits_rect = (x, last[1] + h + 8, w, h)
-        cx, cy = x, last[1] + h + 8
+        self.scroll_rect = (x, y + h + 8, w, h)
+        sx, sy = x, y + h + 8
+        on = self.app.state.scroll
+        self.scroll_g = ui.outlined(*self.scroll_rect, ui.PANEL, ui.LINE)
+        self.scroll_g.append(ui.text(ui.NAME, "Scroll pages", ui.FG, sx + 12, sy + h // 2, (0, 0.5)))
+        self.scroll_g.append(_switch(sx + w - 58, sy + (h - 22) // 2, on))
+        g.append(self.scroll_g)
+        self.credits_rect = (x, sy + h + 8, w, h)
+        cx, cy = x, sy + h + 8
         self.credits_g = ui.outlined(*self.credits_rect, ui.PANEL, ui.LINE)
         self.credits_g.append(ui.text(ui.NAME, "Credits", ui.FG, cx + 12, cy + h // 2, (0, 0.5)))
         self.credits_g.append(ui.triangle(cx + w - 16, cy + h // 2 - 6, 7, 12, ui.DIM, False))
@@ -262,7 +258,7 @@ class SettingsScreen(Screen):
             return self.back.group
         if _hit(self.wifi_rect, x, y, 3):
             return self.wifi_g
-        if self.scroll_rect and _hit(self.scroll_rect, x, y, 3):
+        if _hit(self.scroll_rect, x, y, 3):
             return self.scroll_g
         if _hit(self.credits_rect, x, y, 3):
             return self.credits_g
@@ -273,7 +269,7 @@ class SettingsScreen(Screen):
             self.app.pop()
         elif _hit(self.wifi_rect, x, y, 3):
             self.app.push(WifiScreen(self.app))
-        elif self.scroll_rect and _hit(self.scroll_rect, x, y, 3):
+        elif _hit(self.scroll_rect, x, y, 3):
             self.toggle_scroll()
         elif _hit(self.credits_rect, x, y, 3):
             self.app.push(CreditsScreen(self.app))

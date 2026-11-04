@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""FM-1 Flasher: the touch UI on the TFT FeatherWing V2 3.5".
+"""FM-1 Flasher: the touch UI on the Metro ESP32-P4 and 2.8" TFT Touch Shield.
 
-Copy to CIRCUITPY as code.py, with lib/fm1ui, the fm1 libraries, fonts/ and
-the display, touch, text and font libraries (see PLAN.md, Phase 4).
-Firmware comes from /sd/firmware (tools/make_sd.py), or /firmware on CIRCUITPY.
-On boards with WiFi (the Metro ESP32-P4) the list offers Update firmwares, and a
-card without firmware starts there.
+tools/deploy.py copies it to CIRCUITPY as code.py, with lib/fm1ui, the fm1
+libraries, fonts/ and the splash; the bundle libraries it needs are listed there.
+Firmware comes from /sd/firmware (Catalog over WiFi, or tools/make_sd.py), or
+/firmware on CIRCUITPY. A card without firmware starts in Catalog.
 """
 import gc
 import sys
@@ -30,7 +29,7 @@ state = D.DeviceState("/sd/flasher.json" if sd else "/flasher.json")
 pending = D.pending_install()
 
 fill = False
-if root is None and sd and D.Network is not None:
+if root is None and sd:
     # An empty card on a board with WiFi: fill it from the hub.
     import fm1catalog
     fm1catalog.mkdirs("/sd/firmware")
@@ -44,7 +43,7 @@ if root is None:
     g = displayio.Group()
     g.append(ui.rect(0, 0, w, h, ui.BG))
     g.append(ui.text(ui.NAME, "No firmware found", ui.FG, w // 2, h // 2 - 20, (0.5, 0.5)))
-    hint = "Put a card from tools/make_sd.py in the slot." if sd or D.Network is None else "Put a microSD card in the slot."
+    hint = "Put a microSD card in the slot."
     g.append(ui.text(ui.BODY, hint, ui.DIM, w // 2, h // 2 + 10, (0.5, 0.5)))
     display.root_group = g
     display.refresh()
@@ -62,20 +61,14 @@ if pending:
         D.run(app, entry)
         while True:
             app.step()
-app = A.App(display, D.Touch(), root, state, D.Probe(), D.Installer(),
-            updater=D.Network() if D.Network is not None else None)
+app = A.App(display, D.Touch(), root, state, D.Probe(), D.Installer(), updater=D.Network())
 print("free RAM:", gc.mem_free())
 D.display_redo(display)  # after a start, not a reload
-home = None  # the list; with Settings > Scroll pages on the Metro, the one that scrolls
-if D.Network is not None:
-    from fm1ui import layout
-    if layout.L.SCROLL:
-        from fm1ui import flat
-        home = flat.list_screen(app)
+from fm1ui import flat  # noqa: E402
+
+home = flat.list_screen(app)  # the list; it scrolls with Settings > Scroll pages on
 if fill:
-    from fm1ui import screens as S
     from fm1ui.update import UpdateScreen
-    home = home or S.ListScreen(app)
     app.stack.append(home)  # under it: where Back and OK go
     app.run(UpdateScreen(app))
 app.run(home)

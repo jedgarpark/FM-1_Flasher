@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Update firmwares: bring the card up to date with the FM-1 Firmware Hub over
-WiFi (docs/PLAN-v2.md, Phase 2). Only on boards with a network (the Metro
-ESP32-P4); v1 never imports this.
+WiFi (docs/PLAN-v2.md, Phase 2).
 
 The work is a generator (job()) that the screen advances a step at a time
 from tick(), so the screen keeps drawing and Stop works between steps: one

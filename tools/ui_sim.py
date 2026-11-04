@@ -3,7 +3,6 @@
 """Run the flasher UI on the desktop with Blinka displayio.
 
   .venv/bin/python tools/ui_sim.py --root sd_out/full/firmware            # window; click and drag
-  .venv/bin/python tools/ui_sim.py --size 320x240                          # the Metro ESP32-P4's 2.8" screen
   .venv/bin/python tools/ui_sim.py --root ... --do "shot list.png" --do "tap 60,100" --do "shot detail.png"
 
 Needs a venv with adafruit-blinka-displayio, adafruit-circuitpython-display-text,
@@ -52,7 +51,7 @@ ui.FONT_DIR = os.path.join(ROOT, "fonts")
 class SimDisplay(busdisplay.BusDisplay):
     """A displayio display that draws into a Pillow image."""
 
-    def __init__(self, width=480, height=320):
+    def __init__(self, width=320, height=240):
         self.image = Image.new("RGB", (width, height))
         self.on_refresh = None
         super().__init__(None, (), width=width, height=height, auto_refresh=False)
@@ -253,10 +252,9 @@ class HubNet:
 
 
 def home_screen(app):
-    """The list as the device has it: with Update (--hub) at 320x240, the
-    Metro's, which scrolls when Settings > Scroll pages is on."""
-    from fm1ui.layout import L
-    if app.updater is not None and L.SCROLL:
+    """The list as the device has it: with Update (--hub), the one that
+    scrolls when Settings > Scroll pages is on."""
+    if app.updater is not None:
         from fm1ui import flat
         return flat.list_screen(app)
     return S.ListScreen(app)
@@ -430,7 +428,6 @@ def main():
     ap.add_argument("--identity", default="FM-1_015", help="what the fake FM-1 answers to Connect, or 'none'")
     ap.add_argument("--do", action="append", default=[], help="script step (headless)")
     ap.add_argument("--scale", type=int, default=2, help="window zoom")
-    ap.add_argument("--size", default="480x320", help="display size: 480x320 (v1) or 320x240 (Metro ESP32-P4)")
     ap.add_argument("--hub", action="store_true", help="Update firmwares from the real hub (writes to --root)")
     ap.add_argument("--hub-only", help="with --hub: a catalogue of only these ids (comma-separated)")
     args = ap.parse_args()
@@ -438,10 +435,9 @@ def main():
     state = C.State(args.state or os.path.join(os.path.dirname(args.root.rstrip("/")), "flasher-sim.json"))
     touch = ScriptTouch()
     probe = FakeProbe(None if args.identity == "none" else args.identity)
-    width, _, height = args.size.partition("x")
     net = (HubNet(args.hub_only.split(",") if args.hub_only else None, state.path + ".wifi")
            if args.hub or args.hub_only else None)
-    app = A.App(SimDisplay(int(width), int(height)), touch, args.root, state, probe, FakeInstaller(animate=not args.do),
+    app = A.App(SimDisplay(), touch, args.root, state, probe, FakeInstaller(animate=not args.do),
                 updater=net)
     if args.do:
         run_script(app, touch, args.do)

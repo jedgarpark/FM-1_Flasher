@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Render the start-up splash from text and two colours (480x320 PNG).
+"""Render the start-up splash from text and two colours (320x240 PNG).
 
   tools/make_splash.py --font ~/Library/Fonts/Gotham-Black.ttf \
-      --bg 000000 --fg b061ff --out art/splash_text.png
-  tools/make_splash.py --font ... --size 320x240 --out art/splash_text_320.png   # the Metro ESP32-P4
+      --bg 000000 --fg b061ff --out art/splash_text_320.png
 
 Same layout as art/fff_splash.png: "FM-1" large, "FIRMWARE" and "FLASHER"
 small, centred. The font isn't in the repo (any heavy sans works); only the
@@ -37,8 +36,8 @@ def main():
     ap.add_argument("--font", required=True, help="a heavy sans .ttf/.otf")
     ap.add_argument("--bg", default="000000", help="background, hex RGB")
     ap.add_argument("--fg", default="b061ff", help="text, hex RGB")
-    ap.add_argument("--out", default="art/splash_text.png")
-    ap.add_argument("--size", default="480x320", help="480x320 (v1) or 320x240 (Metro ESP32-P4)")
+    ap.add_argument("--out", default="art/splash_text_320.png")
+    ap.add_argument("--size", default="320x240", help="WxH; the Metro ESP32-P4's 2.8\" screen is 320x240")
     a = ap.parse_args()
     w, _, h = a.size.partition("x")
     w, h = int(w), int(h)

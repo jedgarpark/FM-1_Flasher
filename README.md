@@ -1,23 +1,47 @@
 # FM-1 Flasher
 
-A portable CircuitPython device that stores M-VAVE FM-1 alt firmwares on a microSD card and installs them over USB MIDI SysEx, with no computer needed. Plug the FM-1 into the flasher, pick a firmware on the touchscreen, and tap Install.
-
-> **The Feather version is deprecated.** The flasher now runs on an Adafruit Metro ESP32-P4 with the 2.8" TFT Touch Shield, which also downloads firmwares from thefirmwarehub.com itself over WiFi: see [docs/PLAN-v2.md](docs/PLAN-v2.md). The Feather-specific notes below are kept for reference only. The last version tested on the Feather is the tag [`v1-feather-final`](../../tree/v1-feather-final); main is no longer tested on it.
-
-**Status:** works end to end on the touchscreen. Browse the firmwares on the card as picture cards or a two-column text list, mark favourites, open a firmware's details, and install it. Installs take about 70 s (V15 → SLOOP 70 s, SLOOP → V15 with factory voices 73 s, V15 → ChoralRoot 69 s).
-
-- [PLAN.md](PLAN.md): roadmap and current status.
-- [DEVNOTES.md](DEVNOTES.md): what we tried and learned, with evidence.
-- [fm1-firmware-flasher-brief.md](fm1-firmware-flasher-brief.md): protocol notes.
-- [patches/README.md](patches/README.md): the CircuitPython patches the device needs.
+A portable CircuitPython device that installs alt firmwares on the M-VAVE FM-1, with no computer needed. It keeps the firmwares on a microSD card, downloads new ones from the [FM-1 Firmware Hub](https://thefirmwarehub.com/) over WiFi, and installs them over USB MIDI SysEx. Plug the FM-1 into the flasher, pick a firmware on the touchscreen, and tap Install.
 
 ## Hardware
 
-- Adafruit Feather RP2040 USB Host, running CircuitPython 11.0.0-alpha.2 built with the patches in `patches/`
-- The FM-1 plugs into the Feather's built-in USB-A (PIO) port through a long USB cable: use the 2 m one (Adafruit 6279). On a short cable, an FM-1 running M-VAVE's V15 often isn't detected. V15 checks whether it should be a USB host, and on this port with a short cable it sometimes decides it is. Installing from V15, or back to V15, needs the long cable. Community firmwares start as plain USB devices: none of the 98 with source on the hub runs that check, and SLOOP worked on every cable tried. A 1 m cable plus a 14 cm panel-mount socket lead also worked with V15. If the FM-1 isn't detected even on the long cable, plug it into a computer, power-cycle it there, then move it back. Cable details and results are in [DEVNOTES.md](DEVNOTES.md) §6.7 and §6.12.
-- Adafruit TFT FeatherWing V2 3.5" 480x320 capacitive touch (PID 5872): the display, touch, and the microSD card that holds the firmwares
+- [Adafruit Metro ESP32-P4](https://www.adafruit.com/product/6536), running CircuitPython 11 built with the two changes in [`patches/`](patches/README.md). Stock CircuitPython can't mount the FM-1 yet.
+- [Adafruit 2.8" TFT Touch Shield, capacitive](https://www.adafruit.com/product/1947) (ILI9341 320x240, FT6206 touch), stacked on the Metro. No jumpers or wiring.
+- A microSD card in the Metro's own slot, for the firmwares. Any FAT card works; an empty one fills itself from the hub.
+- The FM-1 plugs into the Metro's USB-A host port with an ordinary USB cable.
+- Power from USB-C, the barrel jack, or a LiPo on the Metro's battery connector.
 
-The Adafruit USB Host FeatherWing with MAX3421E (PID 5858) also works as the USB host, but its D9/D10 clash with the TFT FeatherWing. On a Feather RP2350, with the TFT's CS and DC rewired to D11 and D4, the touch UI installed V15 → SLOOP → V15 on a short cable ([DEVNOTES.md](DEVNOTES.md) §6.15–6.16). It needs a CircuitPython fix for the SPI bus the wing shares with the display (`patches/cp11-feather-rp2350-max3421e.diff`). See [PLAN.md](PLAN.md) for the plan.
+## What it does
+
+- **Browse** the firmwares on the card as picture cards or a two-column list. Swipe between pages, or drag them with Settings > Scroll pages on. Filter by type (synth, drums, sequencer and so on) or favourites, and sort A-Z, New (newest on the hub) or RcntUp (most recently updated).
+- **Details** for each firmware: the picture, author, version, license and description (drag up and down for long ones), a favourite heart, and Remove, which takes it off the card after asking. M-VAVE's stock V15 can't be removed: it's the way back to the factory firmware.
+- **Install:** tap Connect FM-1, then Install. The flasher checks the package, puts the FM-1 into its loader, writes the firmware and waits for the FM-1 to restart. V15 → SLOOP takes about 50 s, SLOOP → V15 with the factory voices about 46 s.
+- **Catalog:** downloads new firmwares and new versions from the hub over WiFi. Details lists what it would fetch, with tick boxes, All and None, a type filter and an Info button for each. Firmwares are only ever added or updated: one the hub drops, or one you removed, is never deleted or brought back by itself.
+- **Settings:** WiFi (scan, type a password on the on-screen keyboard, up to 8 saved networks), Scroll pages, and Credits.
+
+Installs from V15 and to community firmwares that use a different loader (such as Skiff) are handled. Firmwares the hub sends to their own installer page (such as FIZZ) aren't downloaded, because their package alone isn't enough.
+
+## Setting it up
+
+1. **CircuitPython.** Build it with the patches, following [patches/README.md](patches/README.md), and copy `firmware.uf2` to the Metro's METROP4BOOT drive (double-click reset). The same page covers a Metro that has no TinyUF2 bootloader yet.
+2. **Libraries.** From the CircuitPython bundle, copy these to `CIRCUITPY/lib`: `adafruit_ili9341`, `adafruit_focaltouch`, `adafruit_bus_device`, `adafruit_usb_host_descriptors`, `adafruit_requests` and `adafruit_connection_manager`.
+3. **The flasher.** With the Metro plugged in:
+
+   ```sh
+   python3 tools/deploy.py --mpy-cross path/to/circuitpython/mpy-cross/build/mpy-cross
+   ```
+
+   It compiles `lib/` to `.mpy` with the mpy-cross from your CircuitPython build, and copies `code.py`, the fonts and the splash to CIRCUITPY. It also sets `CIRCUITPY_SDCARD_USB = false` in `settings.toml`, so the card doesn't show up over USB while the flasher uses it. Take the card out and use a card reader to look at it from a computer.
+4. **WiFi.** Join a network in Settings > WiFi, or put `CIRCUITPY_WIFI_SSID` and `CIRCUITPY_WIFI_PASSWORD` in CIRCUITPY's `settings.toml`.
+5. **Firmwares.** Put in a microSD card and tap Catalog. A card with no firmware on it starts there.
+
+Flashing firmware carries a risk of leaving the FM-1 unbootable. Keep both devices powered during an install.
+
+## Documentation
+
+- [docs/PLAN-v2.md](docs/PLAN-v2.md): the plan and status for the Metro flasher.
+- [DEVNOTES.md](DEVNOTES.md): what we tried and learned, with evidence (mostly from the Feather version).
+- [fm1-firmware-flasher-brief.md](fm1-firmware-flasher-brief.md): the FM-1's update protocol and package format.
+- [patches/README.md](patches/README.md): the CircuitPython build.
 
 ## Development
 
@@ -38,6 +62,7 @@ node tests/make_golden.mjs                                    # regenerate golde
 .venv/bin/python tools/ui_sim.py                                  # reads sd_out/full/firmware
 .venv/bin/python tools/ui_sim.py --root /Volumes/FMFLASH/firmware # or a card in a reader
 .venv/bin/python tools/ui_sim.py --identity none                  # start with no FM-1 plugged in
+.venv/bin/python tools/ui_sim.py --root copy/of/firmware --hub    # with Catalog and Settings, using the real hub (writes to --root)
 ```
 
 Keys in the window (the title bar shows the FM-1's state):
@@ -49,44 +74,27 @@ Keys in the window (the title bar shows the FM-1's state):
 | `s` | Stall: the FM-1 doesn't come back after its restart, so the install waits there and shows the power-cycle hint after 20 s. Press `s` again to let it finish. |
 | `h` | List the keys in the terminal. |
 
-Favourites and the list view are saved in `flasher-sim.json` next to the firmware folder, apart from the card's `flasher.json`. The simulator doesn't model the Feather's RAM or speed: a screen that runs out of memory on the device works fine here.
+Favourites and the list view are saved in `flasher-sim.json` next to the firmware folder, apart from the card's `flasher.json`. The simulator draws the Metro's 320x240 screen. It doesn't model the device's speed.
 
 With `--do` steps it runs without a window and saves screenshots, for checking a layout change: `--do "tap 100,100" --do "shot detail.png"`.
 
-### Preparing an SD card
+### Preparing a card from a computer
+
+The flasher fills its own card, but `tools/make_sd.py` can also write one from a computer, through a card reader (it needs Pillow for the card pictures):
 
 ```sh
+tools/make_sd.py --out /Volumes/SDCARD --catalog                 # every firmware on the hub, plus M-VAVE V15
+tools/make_sd.py --out /Volumes/SDCARD --catalog sloop felucca   # just these
 tools/make_sd.py --out /Volumes/SDCARD --fwsc ref/fm1_open/sdk/firmware/FM-1_015.fwsc \
     --name "M-VAVE V15 (stock)" --author M-VAVE --slug stock-v15
-tools/make_sd.py --out /Volumes/SDCARD --catalog sloop felucca   # from the FM-1 Firmware Hub; omit ids for all
 ```
 
-Each firmware goes in `firmware/<slug>/` as the `.fwsc` and a `meta.json`. Every package is checked the same way the device checks it.
+Each firmware goes in `firmware/<slug>/` as the `.fwsc` and a `meta.json`, and `firmware/index.txt` lists them. Every package is checked the same way the device checks it. Packages already on the card are kept when their SHA-256 still matches the catalogue, so a rerun only downloads what's new or changed.
 
-### Refreshing the firmware list from the FM-1 Firmware Hub
+## The Feather version (deprecated)
 
-The flasher never goes online. To pick up new firmwares, or new versions, from [thefirmwarehub.com](https://thefirmwarehub.com/), refresh the card from a computer:
-
-1. Power off the flasher and take the microSD card out of the TFT FeatherWing.
-2. Put the card in a card reader on the computer. On a Mac it mounts as `/Volumes/<name>`, for example `/Volumes/FMFLASH`.
-3. Install Pillow once, for the card pictures: `python3 -m pip install Pillow`.
-4. Run:
-
-   ```sh
-   tools/make_sd.py --out /Volumes/FMFLASH --catalog
-   ```
-
-   With no ids, this fetches every firmware in the catalogue plus M-VAVE V15. Packages already on the card are kept when their SHA-256 still matches the catalogue, so only new or changed ones download. Each download is checked against the catalogue's SHA-256 and size, then with the device's full package checks. The run ends with `index: N firmwares` and exits with an error if any package was rejected.
-5. Eject the card, put it back in the flasher, and power it on. The list screen shows the new firmwares and the catalogue's date.
-
-Notes:
-- **Removed firmwares stay on the card.** A firmware the hub drops isn't removed. The list shows every folder in `firmware/`, so delete the folder by hand, then rerun the command (or any `make_sd.py` run) to rebuild `firmware/index.txt`.
-- **Firmwares with their own installer are left out.** Some firmwares, such as FIZZ, show "Install on its page" on the hub instead of an Install button, because they write data their package doesn't carry. Installed from the package alone, they ask for that data, so `make_sd.py` doesn't add them. One already on the card stays there, like a firmware the hub drops; delete its folder if you don't want it. Install those from their own page. Firmwares the hub only links to, such as Baud Girl, aren't in the catalogue and never reach the card.
-- **Favourites survive.** They're kept with the install record in `flasher.json` at the card's root, which `make_sd.py` never touches.
-- **The card only shows up in a card reader.** With the flasher plugged into a computer, only CIRCUITPY appears: `tools/deploy.py` sets `CIRCUITPY_SDCARD_USB = false`, because the computer reading the card while the flasher used the shared SPI bus corrupted it (DEVNOTES §6.18).
+The first flasher ran on an Adafruit Feather RP2040 USB Host (and later a Feather RP2350 with the MAX3421E USB Host FeatherWing) with the 3.5" TFT FeatherWing V2. It worked, but V15 needed a long USB cable on its PIO host port, the SD card shared a bus with the display, and it had no WiFi. The Metro replaced it. Its last tested version is the tag [`v1-feather-final`](../../tree/v1-feather-final), with its hardware notes, patches and [PLAN.md](PLAN.md); DEVNOTES.md has the evidence.
 
 ## License
 
 GPL-3.0. The update protocol is ported from M-VAVE's `WebUpdate.js` (GPL-3.0-only WITH GPL-3.0-linking-exception). Each firmware keeps its own license.
-
-Flashing firmware carries a risk of leaving the FM-1 unbootable. Keep both devices powered during an install, and have the rescue tools listed in the plan available.

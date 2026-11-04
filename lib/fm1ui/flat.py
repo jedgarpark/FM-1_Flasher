@@ -9,7 +9,7 @@ pages follow the finger and glide to the next one when let go.
 ScrollList is ListScreen with the cards replaced by those pages; everything
 else (header, footer, filters, taps) is ListScreen's. It keeps the current
 page and its neighbours across rebuilds, and draws a missing neighbour a card
-at a time between touches. v1 never imports this: its RAM can't hold pages.
+at a time between touches.
 """
 import time
 
@@ -218,7 +218,7 @@ class Page:
         tx, ty = x + (cw - thumb) // 2, y + L.CARD_THUMB_Y
         cv.picture(self.app.path(e.slug, "thumb.bmp"), tx, ty, thumb, e.version, slot)
         if installed:
-            bx, bw = (x + 4, cw - 8) if L.BAND_FULL else (tx, thumb)
+            bx, bw = x + 4, cw - 8  # across the card, not just the picture
             cv.fill(bx, ty + thumb - 12, bw, 12, ui.CYAN)
             cv.text(ui.SMALL, "INSTALLED", ui.BG, bx + bw // 2, ty + thumb - 6, (0.5, 0.5))
         heart = (x + cw - 15, y + 10)
