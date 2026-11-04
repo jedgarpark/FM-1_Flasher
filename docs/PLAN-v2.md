@@ -198,7 +198,19 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
 ## Phase 3: Battery and release
 
 - [ ] Low-battery warning from `VOLTAGE_MONITOR`; installs on battery
-      through the host port's boost.
+      through the host port's boost. **Shelved for later (4 November 2026).**
+      What we know so far: `board.VOLTAGE_MONITOR` is GPIO18. With a LiPo
+      attached (and USB in) it reads a steady 1.859 V at the pin (raw
+      ~36940 of 65535, 3.3 V reference), 3.72 V if the divider halves it,
+      which fits a LiPo; /2 still needs checking against a multimeter or
+      the schematic. With no battery the reading jumps around (raw
+      41000-64000, ~4.5 V doubled): that's the charger output, not a
+      battery. USB raises the reading while the battery charges, and no
+      other pin was found that tells USB from battery, so the warning
+      should just stay quiet when the reading is high. Proposed design:
+      the median of ~50 quick samples (ignores the odd spike) every ~30 s,
+      a header battery icon that turns red below ~3.5 V, and a
+      confirmation before an install below ~3.4 V.
 - [ ] Soak tests across many firmwares, a Learn Guide section, a release.
 
 ## To look into
