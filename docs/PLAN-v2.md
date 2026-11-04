@@ -2,8 +2,11 @@
 
 A second flasher on an Adafruit Metro ESP32-P4 with the 2.8" TFT Touch
 Shield, which downloads firmwares from thefirmwarehub.com itself over WiFi.
-The v1 Feather RP2350 flasher (PLAN.md) stays as it is; both live in this
-repo.
+The v1 Feather flasher (PLAN.md) is deprecated as of 3 November 2026: the
+Metro does everything it did and more, and its changes since #40 were never
+tested on the Feather. Its last tested version is the tag
+`v1-feather-final` (03eb577, before #40). Its code stays in the repo for now;
+removing the Feather-only parts is a separate cleanup after Phase 3.
 
 ## Hardware
 

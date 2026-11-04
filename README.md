@@ -2,6 +2,8 @@
 
 A portable CircuitPython device that stores M-VAVE FM-1 alt firmwares on a microSD card and installs them over USB MIDI SysEx, with no computer needed. Plug the FM-1 into the flasher, pick a firmware on the touchscreen, and tap Install.
 
+> **The Feather version is deprecated.** The flasher now runs on an Adafruit Metro ESP32-P4 with the 2.8" TFT Touch Shield, which also downloads firmwares from thefirmwarehub.com itself over WiFi: see [docs/PLAN-v2.md](docs/PLAN-v2.md). The Feather-specific notes below are kept for reference only. The last version tested on the Feather is the tag [`v1-feather-final`](../../tree/v1-feather-final); main is no longer tested on it.
+
 **Status:** works end to end on the touchscreen. Browse the firmwares on the card as picture cards or a two-column text list, mark favourites, open a firmware's details, and install it. Installs take about 70 s (V15 → SLOOP 70 s, SLOOP → V15 with factory voices 73 s, V15 → ChoralRoot 69 s).
 
 - [PLAN.md](PLAN.md): roadmap and current status.
