@@ -1,20 +1,19 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The flasher's hardware for the UI, the FM-1 on the USB host port, and
-running an install with a clean heap.
+running an install.
 
 The display, touch, SD card, USB host and WiFi come from fm1ui.metro_p4
 (Metro ESP32-P4 with the 2.8" TFT Touch Shield). v1's Feather code is at
 the tag v1-feather-final.
 
-An install is started by saving the firmware's slug and name in NVM and reloading;
-code.py then runs it before building any other screen. That keeps the
-heap unfragmented (DEVNOTES §6.7).
+An install runs in place, from the confirm screen, on a transport opened for
+it. (The Feather reloaded first, to install on an unfragmented heap, DEVNOTES
+§6.7; the Metro's 16 MB doesn't need that.)
 """
 import json
 import time
 
 import microcontroller
-import supervisor
 import usb.core
 
 import fm1usb
@@ -22,12 +21,10 @@ from fm1ui import catalog as C
 from fm1ui.metro_p4 import (W, H, TOUCH_CAL, SPLASH, SPLASH_HOLD, display_setup, splash,  # noqa: F401
                             display_redo, host_setup, mount_sd, Touch, Network)
 
-# fm1proto and fm1update (the installer) are imported only by run(), which
-# code.py calls after a reload with a fresh heap. The list screen's FM-1
-# probe below needs just the identity query.
+# fm1proto and fm1update (the installer) are imported only by run(). The
+# list screen's FM-1 probe below needs just the identity query.
 
-NVM_TAG = b"FM1P"
-ANSWER_WAIT_S = 15  # for the FM-1 to answer again after the install's reload
+ANSWER_WAIT_S = 15  # for the FM-1 to answer when an install starts
 
 
 def firmware_root(sd):
@@ -220,27 +217,15 @@ def _nvm_write(tag, at, data):
     return True
 
 
-def pending_install():
-    """The slug of an install queued before the last reload; clears it.
-    It's stored as slug, tab, name (the name is for fm1ui.console)."""
-    queued = _nvm_read(NVM_TAG, 0)
-    if queued:
-        microcontroller.nvm[0:4] = b"\0\0\0\0"
-        return queued.partition("\t")[0]
-    return None
-
-
 class Installer:
     def start(self, app, entry):
-        if _nvm_write(NVM_TAG, 0, (entry.slug + "\t" + entry.name).encode()):
-            supervisor.reload()
-        else:  # no NVM: install in place
-            if app.probe is not None:
-                app.probe.close()  # its transport would share the installer's endpoints
-            run(app, entry)
-
-    def finish(self, app):
-        supervisor.reload()
+        """Install now. Connect FM-1's transport is closed and a new one
+        opened (endpoints cleared, fm1usb): handed over as it was, minutes
+        after Connect, the FM-1 lost the first two queries on it, and once
+        the install's next query too (4 November 2026, from Aisling)."""
+        if app.probe is not None:
+            app.probe.close()
+        run(app, entry)
 
 
 def wait_for_fm1(screen, seconds=ANSWER_WAIT_S):
@@ -298,6 +283,10 @@ def run(app, entry):
     import gc
     gc.collect()
     print("install:", entry.slug, "free RAM", gc.mem_free())
+    # Closed in the finally: with no reload after an install, nothing else
+    # would close the package file or a transport an error left open.
+    held = [None]
+    pkg_file = up = None
     try:
         status("Checking package", 0)
         with open(folder + "/meta.json") as f:
@@ -314,7 +303,7 @@ def run(app, entry):
                 print("install: %.1f s trace" % (time.monotonic() - t0), event, *values)
 
         status("Connecting", 0)
-        held = [wait_for_fm1(screen)]
+        held[0] = wait_for_fm1(screen)
         fresh = fm1usb.finder(None, 64, 0)
 
         def finder():
@@ -327,7 +316,6 @@ def run(app, entry):
         up.trace = trace
         print("install: connect", up.connect(force=True))
         up.install(force=True)
-        up.disconnect()
         app.state.record_install(entry.slug, meta["product"])
         print("install: done in %.1f s" % (time.monotonic() - t0))
         screen.finish(True, "The FM-1 restarted with %s." % entry.name)
@@ -336,3 +324,10 @@ def run(app, entry):
         print("install: failed after %.1f s:" % (time.monotonic() - t0), repr(e))
         screen.finish(False, str(e) or repr(e))
         return False
+    finally:
+        if up is not None:
+            up.disconnect()
+        if held[0] is not None:
+            held[0].close()
+        if pkg_file is not None:
+            pkg_file.close()

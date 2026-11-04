@@ -469,8 +469,8 @@ class DetailScreen(Screen):
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
         g.append(ui.rect(0, 0, W, 3, ui.kind_color(e.kind)))
-        self.back = ui.Button("Back", *L.BACK_BTN)
-        g.append(self.back.group)
+        self.back_at = len(g)
+        g.append(self.back_button().group)
         self.heart_rect = L.HEART_BTN
         g.append(ui.outlined(*L.HEART_BTN, ui.PANEL, ui.LINE))  # the heart's toggle is its feedback
         self.heart = ui.heart_tile(e.slug in app.state.favorites, *L.HEART_AT)
@@ -518,12 +518,23 @@ class DetailScreen(Screen):
             self.remove_btn = ui.Button("Remove", *L.REMOVE_BTN, edge=ui.WARN, color=ui.WARN)
             g.append(self.remove_btn.group)
 
+    def installed_here(self):
+        """Is the connected FM-1 running this firmware?"""
+        return bool(self.app.identity) and self.app.installed_slug() == self.entry.slug
+
+    def back_button(self):
+        """Back, outlined in cyan when this firmware is the one on the FM-1
+        (after an install it's the way on, not Install again)."""
+        self.back = ui.Button("Back", *L.BACK_BTN, edge=ui.CYAN if self.installed_here() else ui.LINE)
+        return self.back
+
     def bar(self):
-        """The bottom line: what's connected, and Install or Connect FM-1."""
+        """The bottom line: what's connected, and Install or Connect FM-1.
+        Install again, for the firmware the FM-1 runs, is a plain button."""
         app = self.app
         g = displayio.Group()
+        installed = self.installed_here()
         if app.identity:
-            installed = app.installed_slug() == self.entry.slug
             label, ready = ("Install again" if installed else "Install"), True
             note, color = ("Installed on this FM-1", ui.CYAN) if installed else (fm1_status(app), ui.DIM)
         elif app.connecting:
@@ -533,8 +544,11 @@ class DetailScreen(Screen):
             label, ready = "Connect FM-1", True
             note, color = (("No FM-1 answered. Is it on and plugged in?", ui.WARN) if app.connect_failed
                            else ("Connect the FM-1 to install.", ui.DIM))
-        self.install = ui.Button(label, *L.INSTALL_BTN, fill=ui.CYAN if ready else ui.BG,
-                                 edge=ui.CYAN if ready else ui.LINE, color=ui.BG if ready else ui.LINE)
+        if installed:
+            self.install = ui.Button(label, *L.INSTALL_BTN)
+        else:
+            self.install = ui.Button(label, *L.INSTALL_BTN, fill=ui.CYAN if ready else ui.BG,
+                                     edge=ui.CYAN if ready else ui.LINE, color=ui.BG if ready else ui.LINE)
         g.append(self.install.group)
         nx, ny = L.NOTE_AT
         g.append(wrapped(ui.SMALL, note, color, nx, ny - 7, L.NOTE_W, (0, 0.5), pitch=14))
@@ -566,6 +580,7 @@ class DetailScreen(Screen):
                 self.app.connect()
 
     def fm1_changed(self):
+        self.group[self.back_at] = self.back_button().group
         self.group[self.bar_at] = self.bar()
         self.app.refresh()
 

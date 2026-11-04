@@ -156,8 +156,17 @@ user found the screens good on the 2.8" panel.
       of 100x82 with 40 px pictures (`ui.shrink` halves the 80 px thumbnail),
       12 names a page in the text list, the 80 px picture on the details
       screen, notes that wrap to two lines. `ui_sim.py --size 320x240`.
-- [ ] Relax v1's RAM workarounds on the Metro (16 MB free): not needed so
-      far; the install still goes through a reload, which is harmless.
+- [x] Relax v1's RAM workarounds on the Metro (16 MB free). Installs run
+      in place from the confirm screen (4 November 2026): no reload before
+      or after, the NVM handoff and `fm1ui/console.py` are gone, and OK goes
+      back to the firmware's details and reconnects to the FM-1. Each
+      install opens a fresh transport, and closes it and the package file
+      itself. The identity check before writing gets three tries (Aisling
+      once didn't answer it). On the details of the firmware the FM-1 runs,
+      Back is outlined in cyan and Install again is a plain button. Tested:
+      V15 → Aisling 49.0 s, → V15 44.7-48.3 s, V15 → Skiff 80.5 s,
+      → Clatter 39.1 s, → ChoralRoot 49.1 s. The picture pool and packed
+      fonts stay.
 - [x] `deploy.py` reads the board from `boot_out.txt` (`--board` overrides) and
       writes its splash; `make_splash.py --size 320x240` →
       `art/splash_text_320.png`. Deploy with the Metro build's mpy-cross

@@ -52,6 +52,7 @@ class FakeFM1:
         # drops off the bus on this many-th message after booting the new app.
         self.reenum_after_boot = reenum_after_boot
         self.boot_messages = None
+        self.ignore_identity = 0  # identity queries to leave unanswered (Aisling once didn't answer one)
         self.last_req_at = 0
         self.mode = "app"
         self.generation = 0
@@ -144,7 +145,9 @@ class FakeFM1:
         cmd, data = p
         if self.noise:
             out.append(bytes(P.frame(99, b"noise")))
-        if cmd == P.CMD_IDENTITY:
+        if cmd == P.CMD_IDENTITY and self.ignore_identity:
+            self.ignore_identity -= 1
+        elif cmd == P.CMD_IDENTITY:
             out.append(bytes(P.frame(cmd, self.current_identity().encode().ljust(27, b"\0"))))
         elif cmd == P.CMD_CAPABILITY:
             if self.has_cap and self.mode == "app":

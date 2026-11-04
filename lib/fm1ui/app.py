@@ -10,8 +10,8 @@ touch     .event() -> ("down", x, y) when a touch starts, ("drag", dx, x0, y0)
 probe     .connect() -> the FM-1's identity, or None if none answered
           (Connect FM-1: nothing is sent to the FM-1 before it);
           .present() -> is the connected FM-1 still attached
-installer .start(app, entry): run, or arrange to run, the install;
-          optional .finish(app) after the user dismisses the result
+installer .start(app, entry): run the install, on a ProgressScreen it
+          pushes; finish_install() follows when the user taps its OK
 updater   None, or the network fm1ui.update uses (boards with WiFi): the
           list then offers Update firmwares
 """
@@ -29,13 +29,12 @@ from fm1ui import ui
 class App:
     PROBE_EVERY_S = 2
 
-    def __init__(self, display, touch, root, state, probe=None, installer=None, pictures=True, updater=None):
+    def __init__(self, display, touch, root, state, probe=None, installer=None, updater=None):
         # The picture pool and the fonts are made first and kept, while the heap
         # is still in one piece: made and freed per screen, their 3-8 KB blocks
         # soon no longer fit between the small objects screens leave behind.
         layout.use(display.width, display.height)
-        if pictures:  # not while installing: the installer wants the RAM
-            ui.slots()
+        ui.slots()
         for name in (ui.TITLE, ui.NAME, ui.BODY, ui.SMALL):
             ui.font(name)
         self.display = display
@@ -108,10 +107,13 @@ class App:
         self.installer.start(self, entry)
 
     def finish_install(self):
-        if hasattr(self.installer, "finish"):
-            self.installer.finish(self)
-        else:
-            self.home()
+        """OK after an install: back to the firmware's details, and ask the
+        FM-1, which restarted, what it runs now."""
+        while len(self.stack) > 2 and isinstance(self.stack[-1], (S.ProgressScreen, S.ConfirmScreen)):
+            self.stack.pop()
+        self.identity = None
+        self.show()
+        self.connect()
 
     # -- loop -----------------------------------------------------------------
 

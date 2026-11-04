@@ -406,6 +406,18 @@ class Updater:
         self.wait_for(self.meta["product"])
         self.status("Done", 100)
 
+    def _identity_again(self):
+        """The identity, asked again before anything is written. Three tries:
+        once, Aisling (a legacy community firmware) didn't answer the first,
+        right after the capability query it doesn't support had timed out
+        (4 November 2026)."""
+        for attempt in range(3):
+            try:
+                return P.identity(self.link.query(P.CMD_IDENTITY))
+            except FM1Timeout:
+                if attempt == 2 or self.link.lost:
+                    raise
+
     def install(self, force=False):
         check(self.link is not None, "connect first")
         try:
@@ -413,7 +425,7 @@ class Updater:
             check(self.mode, "reconnect the device")
             check(self.mode != "migration", "confirm the migration and reconnect with force")
             original = self.identity
-            check(P.identity(self.link.query(P.CMD_IDENTITY)) == original, "device identity changed; reconnect")
+            check(self._identity_again() == original, "device identity changed; reconnect")
             stock = self.meta.get("kind") == "stock"
             if stock and original == P.STOCK_PRODUCT:
                 self.restore_factory()

@@ -677,8 +677,8 @@ class ScrollDetail(Scroller, S.DetailScreen):
             g.append(self.bar_g)
             self._place_thumb()
         g.append(ui.rect(0, 0, W, 3, ui.kind_color(e.kind)))
-        self.back = ui.Button("Back", *L.BACK_BTN)
-        g.append(self.back.group)
+        self.back_at = len(g)
+        g.append(self.back_button().group)
         self.heart_rect = L.HEART_BTN
         g.append(ui.outlined(*L.HEART_BTN, ui.PANEL, ui.LINE))
         self.heart = ui.heart_tile(e.slug in app.state.favorites, *L.HEART_AT)

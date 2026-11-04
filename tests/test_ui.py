@@ -143,7 +143,7 @@ class Catalog(unittest.TestCase):
         # a different firmware is on it now
         self.assertEqual(s.installed_slug("FM-1_975", entries), "zp12")
         with open(self.state_path) as f:
-            self.assertIsNone(json.load(f)["pending"])
+            self.assertNotIn("pending", json.load(f))
 
     def test_wrap_and_ellipsize(self):
         width = len
