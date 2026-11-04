@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
 """fm1catalog (the hub catalogue and the card's folders) and fm1pic (hub
 pictures as thumb.bmp), as the Metro's Update firmwares uses them."""
@@ -12,7 +14,7 @@ import unittest
 import zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(os.path.dirname(HERE), "lib"))
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "FM-1_Flasher_Code", "lib"))
 sys.path.insert(0, HERE)
 
 import fm1catalog as K  # noqa: E402

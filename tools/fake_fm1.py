@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
 """A simulated FM-1 for exercising fm1update.Updater without hardware.
 

@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
+# SPDX-License-Identifier: GPL-3.0-only
+# The Learn Guides repo's checks on this project, as it will sit there (FM-1_Flasher/):
+# its SPDX.py, and its pylint 2.7.1 on Python 3.10 with its .pylintrc and pylint_check.sh.
+name: Learn checks
+on: [push, workflow_dispatch]
+jobs:
+  learn:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: FM-1_Flasher
+      - uses: actions/checkout@v4
+        with:
+          repository: adafruit/Adafruit_Learning_System_Guides
+          path: learn
+          sparse-checkout: |
+            SPDX.py
+            .pylintrc
+            pylint_check.sh
+            LICENSES
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Lay out as in the Learn repo
+        run: |
+          mkdir guides
+          cp learn/SPDX.py learn/.pylintrc learn/pylint_check.sh guides/
+          cp -r learn/LICENSES guides/
+          cp FM-1_Flasher/LICENSE guides/LICENSES/GPL-3.0-only.txt
+          rsync -a --exclude .git --exclude .github FM-1_Flasher/ guides/FM-1_Flasher/
+      - name: SPDX
+        working-directory: guides
+        run: GITHUB_WORKSPACE=$PWD python ./SPDX.py
+      - name: pylint
+        working-directory: guides
+        run: |
+          pip install --force-reinstall pylint==2.7.1
+          ./pylint_check.sh FM-1_Flasher
