@@ -69,7 +69,7 @@ def _values():
     PROGRESS_SUB_Y=54,
     BAR=(16, 100, 288, 24),
     PROGRESS_NOTE_Y=160,
-    OK_BTN=(100, 198, 120, 34),
+    OK_BTN=(196, 204, 118, 30),  # where Install is on the details: not over the list's Catalog
     # settings
     SETTINGS_TITLE_Y=19,
     SETTINGS_TEXT_Y=52,

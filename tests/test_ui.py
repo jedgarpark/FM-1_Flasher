@@ -159,6 +159,7 @@ class Gestures(unittest.TestCase):
         except ImportError as e:  # needs displayio (Blinka) on CPython
             self.skipTest("no displayio: %s" % e)
         self.g = Gestures()
+        self.g.sample(None)  # no touch at the start: ready
 
     def feed(self, *points):
         for p in points:
@@ -197,6 +198,14 @@ class Gestures(unittest.TestCase):
         self.assertEqual([g.event(), g.event()], [("down", 100, 50), ("drag", 20, 100, 50)])
         g.sample((90, 51))  # back past the start: still a drag
         self.assertEqual(g.event(), ("drag", -10, 100, 50))
+
+    def test_touch_down_at_start_is_ignored_until_it_lifts(self):
+        # After an install's reload, the finger that tapped OK mustn't tap
+        # the list that comes up under it.
+        from fm1ui.app import Gestures
+        self.g = Gestures()
+        self.assertEqual(self.feed((150, 220), (151, 221)), [])
+        self.assertEqual(self.feed((100, 50)), [("down", 100, 50), ("tap", 100, 50)])
 
     def test_drag_only_lets_go(self):
         self.assertEqual(self.feed((100, 50), (140, 90)), [("down", 100, 50), ("up",)])

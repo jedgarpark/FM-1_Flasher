@@ -208,7 +208,11 @@ class Gestures:
     sample(point or None) each poll; event() returns what finished.
     A move becomes a drag one way or the other, and stays that way until
     the finger lifts: sideways ("drag", dx, x0, y0) or, when it's mostly up
-    or down, ("vdrag", dy, x0, y0)."""
+    or down, ("vdrag", dy, x0, y0).
+
+    A touch that's already down when it starts is ignored until it lifts:
+    after an install, OK reloads the code, and the finger that tapped it
+    shouldn't also tap the list that comes up under it."""
 
     SWIPE_PX = 60
     TAP_PX = 30  # a fingertip rolls 20-30 px on a firm tap
@@ -219,8 +223,12 @@ class Gestures:
         self.last = None
         self.dragging = None  # "x", "y" or None
         self.events = []
+        self.armed = False  # True once a sample with no touch has come in
 
     def sample(self, point):
+        if not self.armed:
+            self.armed = point is None
+            return
         if point is not None:
             if self.start is None:
                 self.start = point

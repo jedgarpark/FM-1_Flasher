@@ -231,10 +231,12 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       kept in the state. Update firmwares copies the dates into an older
       card's unchanged firmwares (at once when there's nothing to download).
 
-- [ ] Move the OK button after an install from the centre to the right,
-      where Install is on the details screen: a centred OK sits over the
-      list's Catalog button, so the tap that closes it often opens Catalog
-      too (user report, 4 November 2026; `OK_BTN` in `fm1ui/layout.py`).
+- [x] Move the OK button after an install from the centre to the right,
+      where Install is on the details screen: a centred OK sat over the
+      list's Catalog button, so the tap that closed it often opened Catalog
+      too (user report, 4 November 2026). OK reloads the code, and the touch
+      came through to the new list; `fm1ui.app.Gestures` now also ignores a
+      touch that's already down when it starts, until it lifts.
 
 ## Upstream and the hub
 
