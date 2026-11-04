@@ -1,5 +1,7 @@
 # FM-1 Flasher: plan
 
+> **Deprecated (3 November 2026).** This is the plan for the v1 Feather flasher, kept for reference. Work continues on the Metro ESP32-P4: see [docs/PLAN-v2.md](docs/PLAN-v2.md). The last version tested on the Feather is the tag `v1-feather-final`.
+
 See `fm1-firmware-flasher-brief.md` for the protocol and package format, and
 **`DEVNOTES.md` for the history: what we tried, what we learned, and the
 evidence**. This file is the plan and the current status.
