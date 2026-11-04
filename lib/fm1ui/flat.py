@@ -509,15 +509,21 @@ def detail_band():
     return top, L.INSTALL_BTN[1] - 4 - top
 
 
+MAX_DETAIL_H = 1200  # a page's tallest bitmap (a 551-character description is ~400)
+VGLIDE_FRAMES = 10
+VFLICK_S = 0.3  # a let-go glides on as far as it would go in this time
+
+
 class DetailPage:
-    """One firmware's details (DetailScreen.build's middle) as a Canvas."""
+    """One firmware's details (DetailScreen.build's middle) as a Canvas, as
+    tall as its whole description: a long one scrolls up and down in the
+    band (ScrollDetail.vdrag)."""
 
     def __init__(self, app, n, entry):
         self.app = app
         self.n = n
         self.entry = entry
-        top, h = detail_band()
-        self.canvas = Canvas(L.W, top, h)
+        self.canvas = None  # made by the first step, once the height is known
         self.tile = None
         self.work = self.steps()
 
@@ -528,9 +534,30 @@ class DetailPage:
             self.tile = displayio.TileGrid(self.canvas.bmp, pixel_shader=self.canvas.pal, y=self.canvas.top)
         return self.tile
 
+    def max_scroll(self):
+        """How far the page scrolls: its height past the band's."""
+        return max(0, self.canvas.bmp.height - detail_band()[1]) if self.canvas else 0
+
+    def _lines(self, desc, y):
+        """The description as (left, y, text): beside the picture, then
+        the full width under it. Returns (lines, the y after the last)."""
+        W, x0 = L.W, L.DETAIL_X
+        width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
+        out = []
+        rest = desc
+        while rest:
+            left = x0 if y < L.PIC_BOTTOM else L.DESC_LEFT
+            line = C.wrap(rest, width_of, W - left - 12)[0]
+            if not line:  # a word wider than the line
+                line = rest.split(" ")[0]
+            rest = rest[len(line):].lstrip(" ")
+            out.append((left, y, line))
+            y += 18
+        return out, y
+
     def steps(self):
         import json
-        e, app, cv = self.entry, self.app, self.canvas
+        e, app = self.entry, self.app
         try:
             with open(app.path(e.slug, "meta.json")) as f:
                 m = json.load(f)
@@ -538,11 +565,16 @@ class DetailPage:
             m = {}
         pic, size = L.PIC
         px, py = L.PIC_AT
+        author = m.get("author") or ""
+        desc = m.get("description") or ""
+        # The description starts under the name, author, info and tags.
+        lines, end = self._lines(desc, py + 28 + (22 if author else 0) + 20 + 30)
+        top, h = detail_band()
+        h = min(MAX_DETAIL_H, max(h, end - top + 6))
+        self.canvas = cv = Canvas(L.W, top, h)
         cv.outlined(px - 1, py - 1, size + 2, size + 2, ui.THUMB_BG, ui.LINE, 1)
         cv.picture(app.path(e.slug, pic), px, py, size, e.version, 0)
         yield
-        author = m.get("author") or ""
-        desc = m.get("description") or ""
         nbytes = m.get("bytes")
         info = "  ".join(s for s in (C.version_label(e.version), e.product,
                                      "%d KB" % (nbytes // 1024) if nbytes else "") if s)
@@ -572,26 +604,16 @@ class DetailPage:
             cv.outlined(tx, y, w, 20, ui.PANEL, ui.LINE, 3)
             cv.text(ui.SMALL, label, color, tx + w // 2, y + 10, (0.5, 0.5))
             tx += w + 6
-        y += 30
-        rest = desc
-        width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
-        bottom, left_full = L.DESC_BOTTOM, L.DESC_LEFT
-        while rest and y + 16 <= bottom:
-            left = x0 if y < L.PIC_BOTTOM else left_full
-            line = C.wrap(rest, width_of, W - left - 12)[0]
-            rest = rest[len(line):].lstrip(" ")
-            if rest and y + 34 > bottom:
-                line = C.ellipsize(line + " " + rest, width_of, W - left - 12 if left == x0 else L.DESC_LAST_W)
-                rest = ""
-            cv.text(ui.BODY, line, ui.TEXT, left, y, (0, 0))
-            y += 18
+        for left, ly, line in lines:
+            cv.text(ui.BODY, line, ui.TEXT, left, ly, (0, 0))
 
 
 class ScrollDetail(Scroller, S.DetailScreen):
-    """DetailScreen that drags to the previous or next firmware of the list
-    it was opened from (its filters, its order). Only Back goes back."""
+    """DetailScreen that drags sideways to the previous or next firmware of
+    the list it was opened from (its filters, its order), and up and down
+    through a long description. Only Back goes back."""
 
-    KEEP = S.DetailScreen.KEEP + ("order", "page", "flat")
+    KEEP = S.DetailScreen.KEEP + ("order", "page", "flat", "scroll")
 
     def __init__(self, app, entry, order, pos):
         super().__init__(app, entry)
@@ -599,6 +621,8 @@ class ScrollDetail(Scroller, S.DetailScreen):
         self.page = pos
         self.flat = {}
         self.dragging = False
+        self.axis = "x"  # the drag under way: "x" (firmwares) or "y" (this one's text)
+        self.scroll = 0  # how far this firmware's page is scrolled up
 
     @property
     def pages(self):
@@ -627,15 +651,31 @@ class ScrollDetail(Scroller, S.DetailScreen):
             if abs(n - self.page) > 1:
                 del self.flat[n]
         W, H = L.W, L.H
+        top, band = detail_band()
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
         self.strip = displayio.Group()
-        self._attach_tile(self._page(self.page).grid(), self.page)
+        cur = self._page(self.page)
+        self.scroll = max(0, min(self.scroll, cur.max_scroll()))
+        self._attach_tile(cur.grid(), self.page)
+        cur.tile.y = top - self.scroll
         for n in self._neighbours():
             p = self.flat.get(n)
             if p is not None and p.done():
                 self._attach_tile(p.grid(), n)
+                p.tile.y = top
         g.append(self.strip)
+        # A scrolled page passes under the header and the bar: they cover it.
+        g.append(ui.rect(0, 0, W, top, ui.BG))
+        g.append(ui.rect(0, top + band, W, H - top - band, ui.BG))
+        self.thumb = self.bar_g = None  # the scroll bar, for a page that scrolls
+        if cur.max_scroll():
+            self.bar_g = displayio.Group()
+            self.bar_g.append(ui.rect(W - 4, top + 2, 2, band - 4, ui.LINE))
+            self.thumb = ui.rect(W - 4, top + 2, 2, max(12, (band - 4) * band // (band + cur.max_scroll())), ui.DIM)
+            self.bar_g.append(self.thumb)
+            g.append(self.bar_g)
+            self._place_thumb()
         g.append(ui.rect(0, 0, W, 3, ui.kind_color(e.kind)))
         self.back = ui.Button("Back", *L.BACK_BTN)
         g.append(self.back.group)
@@ -656,9 +696,77 @@ class ScrollDetail(Scroller, S.DetailScreen):
             if not p.done():
                 if p.step():
                     self._attach_tile(p.grid(), n)
+                    p.tile.y = detail_band()[0]
                 return
 
+    # -- sideways: the firmwares; up and down: this one's description ------------
+
+    def drag(self, dx, x0, y0):
+        if not self.dragging:
+            self.axis = "x"
+            if self.bar_g is not None:  # it's this firmware's, not the next one's
+                self.bar_g.hidden = True
+        Scroller.drag(self, dx, x0, y0)
+
+    def vdrag(self, dy, x0, y0):
+        p = self._page(self.page)
+        most = p.max_scroll()
+        if not most:
+            return
+        if not self.dragging:
+            self.dragging = True
+            self.axis = "y"
+            self.hist = []
+            self.scroll0 = self.scroll
+        self.hist.append((time.monotonic(), dy))
+        s = self.scroll0 - dy
+        if s < 0:  # a rubber band past the ends
+            s = s // 3
+        elif s > most:
+            s = most + (s - most) // 3
+        self._set_scroll(s)
+        self.app.refresh()
+
+    def drop(self):
+        if self.axis == "x":
+            Scroller.drop(self)
+            if self.bar_g is not None:
+                self.bar_g.hidden = False
+                self.app.refresh()
+            return
+        self.dragging = False
+        hist = self.hist
+        now = hist[-1][0] if hist else 0
+        recent = [h for h in hist if now - h[0] <= 0.12] or hist[-2:]
+        v = 0
+        if len(recent) > 1:
+            v = (recent[-1][1] - recent[0][1]) / max(0.001, recent[-1][0] - recent[0][0])
+        most = self._page(self.page).max_scroll()
+        start = self.scroll
+        target = max(0, min(most, int(start - v * VFLICK_S)))
+        for f in range(1, VGLIDE_FRAMES + 1):
+            e = 1 - (1 - f / VGLIDE_FRAMES) ** 3
+            self._set_scroll(int(start + (target - start) * e))
+            self.app.refresh()
+
+    def _set_scroll(self, s):
+        self.scroll = s
+        p = self.flat.get(self.page)
+        if p is not None and p.tile is not None:
+            p.tile.y = detail_band()[0] - s
+        self._place_thumb()
+
+    def _place_thumb(self):
+        if self.thumb is None:
+            return
+        top, band = detail_band()
+        most = self._page(self.page).max_scroll()
+        room = band - 4 - self.thumb.height
+        s = max(0, min(most, self.scroll))
+        self.thumb.y = top + 2 + (room * s // most if most else 0)
+
     def _turned(self, d):
+        self.scroll = 0
         self.page += d
         self.entry = self.app.index.entry(self.order[self.page])
         self.meta = None

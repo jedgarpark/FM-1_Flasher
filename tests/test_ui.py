@@ -172,7 +172,13 @@ class Gestures(unittest.TestCase):
 
     def test_no_drag_for_a_roll_or_an_up_down_move(self):
         self.assertEqual(self.feed((100, 50), (108, 52)), [("down", 100, 50), ("tap", 100, 50)])
-        self.assertEqual(self.feed((100, 50), (115, 95)), [("down", 100, 50), ("up",)])
+        self.assertEqual(self.feed((100, 50), (130, 95)), [("down", 100, 50), ("up",)])
+
+    def test_vertical_drag(self):
+        # Mostly up or down: a vertical drag, which stays one even if the
+        # finger then goes sideways.
+        self.assertEqual(self.feed((100, 150), (104, 120), (180, 100)),
+                         [("down", 100, 150), ("vdrag", -50, 100, 150), ("up",)])
 
     def test_drag_events_as_it_moves(self):
         g = self.g
