@@ -252,7 +252,12 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
 - [x] Ask for a Metro P4 board-level enumeration buffer (512, or 4096 like
       Fruit Jam), so v2 runs on stock CircuitPython: adafruit/circuitpython#11751
       (4 November 2026), the one line in `patches/cp11-metro-p4-enum-bufsize.diff`.
-      Open, waiting for review.
+      Merged the same day (66688d5d05, approved by mikeysklar): CircuitPython
+      `main` from then on, and the next 11.x release, mount the FM-1 on the
+      Metro with no patch.
+- [ ] Once a CircuitPython build with 66688d5d05 is out, try it on the
+      Metro without the TinyUSB fix: installs are expected to fail (a
+      timed-out read isn't cancelled), but a test settles it for the guide.
 - [ ] The TinyUSB DWC2 abort fix (`patches/tinyusb-dwc2-abort.diff`):
       reported as hathach/tinyusb#4405, no replies yet. Until it's fixed
       upstream and CircuitPython picks it up, the flasher needs the custom
