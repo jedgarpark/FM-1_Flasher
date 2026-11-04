@@ -186,6 +186,7 @@ class State:
         self.pending = None    # slug of an install to run after a reload
         self.view = "grid"
         self.sort = "az"
+        self.removed = set()  # slugs removed on the device: updates leave them unticked
         self.scroll = True
         try:
             with open(path) as f:
@@ -195,6 +196,7 @@ class State:
             self.pending = data.get("pending")
             self.view = data.get("view", "grid")
             self.sort = data.get("sort", "az")
+            self.removed = set(data.get("removed", ()))
             self.scroll = data.get("scroll", True)
         except (OSError, ValueError):
             pass
@@ -202,6 +204,8 @@ class State:
     def save(self):
         data = {"favorites": sorted(self.favorites), "installed": self.installed, "pending": self.pending,
                 "view": self.view, "sort": self.sort, "scroll": self.scroll}
+        if self.removed:
+            data["removed"] = sorted(self.removed)
         try:
             with open(self.path, "w") as f:
                 json.dump(data, f)

@@ -118,6 +118,20 @@ class Card(unittest.TestCase):
                 self.assertEqual(f.readline(), "updated\ttoday\n")
             self.assertFalse(os.path.exists(os.path.join(root, "index.txt.part")))
 
+    def test_remove_on_request(self):
+        with tempfile.TemporaryDirectory() as root:
+            put(root, "a", {"name": "A", "product": "FM-1_900", "catalog_id": "a"})
+            put(root, "b", {"name": "B", "product": "FM-1_901"})
+            with open(os.path.join(root, "a", "thumb.bmp"), "wb") as f:
+                f.write(b"bmp")
+            K.write_index(root, "today")
+            K.remove(root, "a")
+            self.assertFalse(os.path.exists(os.path.join(root, "a")))
+            with open(os.path.join(root, "index.txt")) as f:
+                lines = f.read().splitlines()
+            self.assertEqual(lines[0], "updated\ttoday")
+            self.assertEqual([x.split("\t")[0] for x in lines[1:]], ["b"])
+
     def test_clean_parts(self):
         with tempfile.TemporaryDirectory() as root:
             put(root, "a", {"catalog_id": "a"})

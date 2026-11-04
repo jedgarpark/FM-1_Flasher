@@ -91,6 +91,13 @@ class Catalog(unittest.TestCase):
         s.save()
         self.assertEqual(C.State(self.state_path).sort, "new")
 
+    def test_removed_persists(self):
+        s = C.State(self.state_path)
+        self.assertEqual(s.removed, set())
+        s.removed.add("zp12")
+        s.save()
+        self.assertEqual(C.State(self.state_path).removed, {"zp12"})
+
     def test_view_persists(self):
         s = C.State(self.state_path)
         self.assertEqual(s.view, "grid")

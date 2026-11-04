@@ -482,6 +482,7 @@ class DetailScreen(Screen):
         g.append(ui.outlined(*L.HEART_BTN, ui.PANEL, ui.LINE))  # the heart's toggle is its feedback
         self.heart = ui.heart_tile(e.slug in app.state.favorites, *L.HEART_AT)
         g.append(self.heart)
+        self.remove_button(g)
 
         pic, size = L.PIC
         px, py = L.PIC_AT
@@ -516,6 +517,14 @@ class DetailScreen(Screen):
         self.group = g
         return g
 
+    def remove_button(self, g):
+        """Remove, on boards that can rewrite the card's list (the Metro);
+        never for M-VAVE V15, the way back to the factory firmware."""
+        self.remove_btn = None
+        if L.REMOVE_BTN and self.app.updater is not None and self.entry.product != STOCK_PRODUCT:
+            self.remove_btn = ui.Button("Remove", *L.REMOVE_BTN, edge=ui.WARN, color=ui.WARN)
+            g.append(self.remove_btn.group)
+
     def bar(self):
         """The bottom line: what's connected, and Install or Connect FM-1."""
         app = self.app
@@ -544,6 +553,8 @@ class DetailScreen(Screen):
     def target(self, x, y):
         if self.back.hit(x, y):
             return self.back.group
+        if self.remove_btn is not None and self.remove_btn.hit(x, y, 4):
+            return self.remove_btn.group
         if _hit(self.heart_rect, x, y, 14):
             return None
         if self.install.hit(x, y) and not self.app.connecting:
@@ -553,6 +564,8 @@ class DetailScreen(Screen):
     def tap(self, x, y):
         if self.back.hit(x, y):
             self.app.pop()
+        elif self.remove_btn is not None and self.remove_btn.hit(x, y, 4):
+            self.app.push(RemoveScreen(self.app, self.entry))
         elif _hit(self.heart_rect, x, y, 14):
             ui.set_heart(self.heart, self.app.state.toggle_favorite(self.entry.slug))
             self.app.refresh()
@@ -645,6 +658,80 @@ class ConfirmScreen(Screen):
             self.app.show()
         else:  # unplugged: back to the details, which offer Connect FM-1
             self.app.pop()
+
+
+class RemoveScreen(Screen):
+    """Remove X from the card? From Remove on the details (the Metro). Yes
+    deletes its folder and goes back to the list; updates then leave it
+    unticked, so it stays gone until it's ticked in Update > Details."""
+
+    KEEP = Screen.KEEP + ("entry", "error")
+
+    def __init__(self, app, entry):
+        super().__init__(app)
+        self.entry = entry
+        self.error = None
+
+    def build(self):
+        e = self.entry
+        title = "Remove %s?" % e.name
+        if self.error:
+            msg, color = self.error, ui.WARN
+        else:
+            msg, color = ("Deletes %s from the SD card: its package and pictures. Update firmwares "
+                          "leaves it out, unless you tick it in Details." % e.name), ui.TEXT
+        width_of = lambda s: ui.width(ui.BODY, s)  # noqa: E731
+        g = displayio.Group()
+        g.append(ui.rect(0, 0, L.W, L.H, ui.BG))
+        px, py, pw, ph = L.CONFIRM_PANEL
+        g.append(ui.outlined(px, py, pw, ph, ui.PANEL, ui.LINE))
+        g.append(ui.rect(px + 4, py + 2, pw - 8, 3, ui.WARN))
+        tf = ui.title_font(title)
+        tx, ty = L.CONFIRM_TITLE_AT
+        g.append(ui.text(tf, C.ellipsize(title, lambda s: ui.width(tf, s), L.CONFIRM_W), ui.FG, tx, ty, (0, 0)))
+        y = L.CONFIRM_TEXT_Y
+        for line in C.wrap(msg, width_of, L.CONFIRM_W)[:L.CONFIRM_LINES]:
+            g.append(ui.text(ui.BODY, line, color, tx, y, (0, 0)))
+            y += 19
+        self.cancel = ui.Button("Cancel" if not self.error else "Back", *L.CANCEL_BTN)
+        self.go = ui.Button("Remove", *L.GO_BTN, fill=ui.WARN, edge=ui.WARN, color=ui.BG)
+        self.go.group.hidden = bool(self.error)
+        g.append(self.cancel.group)
+        g.append(self.go.group)
+        self.group = g
+        return g
+
+    def target(self, x, y):
+        if self.cancel.hit(x, y):
+            return self.cancel.group
+        if self.go.hit(x, y) and not self.error:
+            return self.go.group
+        return None
+
+    def tap(self, x, y):
+        if self.cancel.hit(x, y):
+            self.app.pop()
+        elif self.go.hit(x, y) and not self.error:
+            self.remove()
+
+    def remove(self):
+        import fm1catalog as K
+        app, slug = self.app, self.entry.slug
+        try:
+            K.remove(app.root, slug)
+        except OSError as e:
+            print("remove %s: %r" % (slug, e))
+            self.error = "Couldn't remove it from the card (%s)." % (str(e) or repr(e))
+        st = app.state
+        if self.error is None or not K.exists(app.root + "/" + slug + "/meta.json"):
+            st.removed.add(slug)
+            st.favorites.discard(slug)
+            st.save()
+        app.reload_index()
+        if self.error:
+            app.show()
+        else:
+            app.home()
 
 
 class ProgressScreen(Screen):

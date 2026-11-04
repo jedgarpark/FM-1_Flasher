@@ -58,6 +58,7 @@ def _big():
     # details
     BACK_BTN=(8, 8, 84, 30),
     HEART_BTN=(424, 8, 48, 30),
+    REMOVE_BTN=None,  # remove the firmware from the card (boards with fm1catalog), or None
     HEART_AT=(442, 18),
     PIC=("large.bmp", 160),
     PIC_AT=(12, 48),
@@ -127,6 +128,7 @@ def _small():
     DATE_Y=None,
     BACK_BTN=(6, 6, 64, 26),
     HEART_BTN=(270, 6, 44, 26),
+    REMOVE_BTN=(190, 6, 74, 26),
     HEART_AT=(285, 13),
     PIC=("thumb.bmp", 80),
     PIC_AT=(8, 38),

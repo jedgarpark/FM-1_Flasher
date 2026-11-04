@@ -253,9 +253,16 @@ class UpdateScreen:
                              (ui.BODY, ", ".join(size), ui.TEXT),
                              (ui.BODY, "About %d min. Keep the flasher powered." % mins, ui.DIM)))
                 self._buttons("Back", "Update")
-            elif p.offered:
+            elif p.offered and not p.skip <= self.app.state.removed:
                 self._lines(((ui.NAME, "Nothing picked", ui.WARN),
                              (ui.BODY, "Tick firmwares in Details to download them.", ui.TEXT)))
+                self._buttons("Back", None)
+            elif p.offered:  # only firmwares removed on the device
+                n = len(p.skip)
+                self._lines(((ui.NAME, "Up to date", ui.OK),
+                             (ui.BODY, "%d you removed %s left out. Tick %s in Details to get %s back." % (
+                                 n, "is" if n == 1 else "are", "it" if n == 1 else "them",
+                                 "it" if n == 1 else "them"), ui.TEXT)))
                 self._buttons("Back", None)
             else:
                 self._lines(((ui.NAME, "Up to date", ui.OK),
@@ -349,6 +356,8 @@ class UpdateScreen:
                 cat = app.updater.get_json(K.HUB + "catalog.json")
                 self.plan = K.Plan(cat, app.root)
                 cat = None
+                gone = app.state.removed  # removed on the device: left out unless ticked
+                self.plan.skip = set(e["id"] for e in self.plan.offered if e["id"] in gone)
                 self.pics = picture_list(app.root, self.plan)
             except (OSError, ValueError, KeyError) as e:
                 err = "Couldn't read the hub's catalog (%s)." % (str(e) or repr(e))
@@ -378,6 +387,11 @@ class UpdateScreen:
         self.pics = picture_list(self.app.root, self.plan)
 
     def start_run(self):
+        st = self.app.state
+        back = set(e["id"] for e in self.plan.downloads) & st.removed
+        if back:  # ticked again: no longer removed
+            st.removed -= back
+            st.save()
         if self.mid is not None:
             self.mid.group.hidden = True
         self.mode = "run"
