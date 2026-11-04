@@ -23,14 +23,14 @@ Installs from V15 and to community firmwares that use a different loader (such a
 ## Setting it up
 
 1. **CircuitPython.** Build it with the patches, following [patches/README.md](patches/README.md), and copy `firmware.uf2` to the Metro's METROP4BOOT drive (double-click reset). The same page covers a Metro that has no TinyUF2 bootloader yet.
-2. **Libraries.** From the CircuitPython bundle, copy these to `CIRCUITPY/lib`: `adafruit_ili9341`, `adafruit_focaltouch`, `adafruit_bus_device`, `adafruit_usb_host_descriptors`, `adafruit_requests` and `adafruit_connection_manager`.
-3. **The flasher.** With the Metro plugged in:
+2. **The flasher.** `FM-1_Flasher_Code/` is laid out as CIRCUITPY: `code.py`, `lib/` (the flasher's own `fm1ui` and `fm1*` modules), `fonts/` and `splash.bmp`. Either copy it with the guide's Project Bundle, which also brings the libraries from the CircuitPython bundle (`adafruit_ili9341`, `adafruit_focaltouch`, `adafruit_bus_device`, `adafruit_usb_host_descriptors`, `adafruit_requests`, `adafruit_connection_manager`), or, with those libraries already on the board, deploy from this folder:
 
    ```sh
    python3 tools/deploy.py --mpy-cross path/to/circuitpython/mpy-cross/build/mpy-cross
    ```
 
-   It compiles `lib/` to `.mpy` with the mpy-cross from your CircuitPython build, and copies `code.py`, the fonts and the splash to CIRCUITPY. It also sets `CIRCUITPY_SDCARD_USB = false` in `settings.toml`, so the card doesn't show up over USB while the flasher uses it. Take the card out and use a card reader to look at it from a computer.
+   `deploy.py` compiles `lib/` to `.mpy` with the mpy-cross from your CircuitPython build, which saves RAM and start-up time, and copies `code.py`, the fonts and the splash.
+3. **settings.toml.** Add `CIRCUITPY_SDCARD_USB = false` (`deploy.py` does it for you), so the card doesn't show up over USB while the flasher uses it. Take the card out and use a card reader to look at it from a computer. It takes effect after a reset.
 4. **WiFi.** Join a network in Settings > WiFi, or put `CIRCUITPY_WIFI_SSID` and `CIRCUITPY_WIFI_PASSWORD` in CIRCUITPY's `settings.toml`.
 5. **Firmwares.** Put in a microSD card and tap Catalog. A card with no firmware on it starts there.
 
@@ -42,6 +42,8 @@ Flashing firmware carries a risk of leaving the FM-1 unbootable. Keep both devic
 - [DEVNOTES.md](DEVNOTES.md): what we tried and learned, with evidence (mostly from the Feather version).
 - [fm1-firmware-flasher-brief.md](fm1-firmware-flasher-brief.md): the FM-1's update protocol and package format.
 - [patches/README.md](patches/README.md): the CircuitPython build.
+
+The folders: `FM-1_Flasher_Code/` goes on the board; `tools/` (deploy, the simulator, making SD cards, fonts and the splash) and `tests/` run on a computer, and `tools/device/` holds REPL scripts from the bring-up. `tools/` and `tests/` are left out of the Learn Guides lint check (`.circuitpython.skip`).
 
 ## Development
 
@@ -55,7 +57,7 @@ node tests/make_golden.mjs                                    # regenerate golde
 
 ### Trying the UI on the desktop
 
-`tools/ui_sim.py` runs the same `lib/fm1ui` screens in a window, with the mouse as your finger: tap, and drag sideways to swipe. The FM-1 is faked and an install only animates the progress screen, so nothing is flashed. It needs the dev venv with the Blinka displayio packages, pygame and Pillow (see the script's docstring).
+`tools/ui_sim.py` runs the same `FM-1_Flasher_Code/lib/fm1ui` screens in a window, with the mouse as your finger: tap, and drag sideways to swipe. The FM-1 is faked and an install only animates the progress screen, so nothing is flashed. It needs the dev venv with the Blinka displayio packages, pygame and Pillow (see the script's docstring).
 
 ```sh
 .venv/bin/python tools/make_sd.py --out sd_out/full --catalog     # once, and to refresh: a local copy of the card
