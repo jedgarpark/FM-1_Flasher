@@ -566,7 +566,7 @@ class DetailPage:
         pic, size = L.PIC
         px, py = L.PIC_AT
         author = m.get("author") or ""
-        desc = m.get("description") or ""
+        desc = C.plain(m.get("description") or "")
         # The description starts under the name, author, info and tags.
         lines, end = self._lines(desc, py + 28 + (22 if author else 0) + 20 + 30)
         top, h = detail_band()

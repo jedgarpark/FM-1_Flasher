@@ -113,6 +113,116 @@ class _Paged(Screen):
             self.app.pop()
 
 
+class TextScreen(Screen):
+    """A title, Back, and lines of text that drag up and down when they're
+    longer than the screen. items are (font, text, colour), each wrapped to
+    the width, with a gap after each; or a subclass's lines()."""
+
+    TOP = 40  # under Back
+    KEEP = Screen.KEEP + ("scroll", "_title", "_items")
+
+    def __init__(self, app, title="", items=()):
+        super().__init__(app)
+        self._title = title
+        self._items = items
+        self.dragging = False
+        self.scroll = 0
+
+    def title(self):
+        return self._title
+
+    def lines(self):
+        return self._items
+
+    def build(self):
+        W, H = L.W, L.H
+        self.dragging = False
+        g = displayio.Group()
+        g.append(ui.rect(0, 0, W, H, ui.BG))
+        body = displayio.Group()
+        y = self.TOP + 4
+        for name, text, color in self.lines():
+            for part in C.wrap(text, lambda s: ui.width(name, s), W - 24):
+                body.append(ui.text(name, part, color, 12, y, (0, 0)))
+                y += 18 if name != ui.SMALL else 16
+            y += 6
+        g.append(body)
+        self.body = body
+        band = H - self.TOP - 4
+        self.most = max(0, y - self.TOP - band)
+        self.scroll = max(0, min(self.scroll, self.most))
+        body.y = -self.scroll
+        cover = displayio.Group()  # the header covers the text that scrolls under it
+        self.back = _header(cover, self.title())
+        cover[0].height = self.TOP  # _header's background: just the header's band
+        g.append(cover)
+        self.thumb = None
+        if self.most:
+            g.append(ui.rect(W - 4, self.TOP + 2, 2, band - 4, ui.LINE))
+            self.thumb = ui.rect(W - 4, self.TOP + 2, 2, max(12, (band - 4) * band // (band + self.most)), ui.DIM)
+            g.append(self.thumb)
+            self._place_thumb()
+        self.group = g
+        return g
+
+    def _place_thumb(self):
+        if self.thumb is not None:
+            room = L.H - self.TOP - 4 - 4 - self.thumb.height
+            self.thumb.y = self.TOP + 2 + room * max(0, min(self.most, self.scroll)) // self.most
+
+    def vdrag(self, dy, x0, y0):
+        if not self.most:
+            return
+        if not self.dragging:
+            self.dragging = True
+            self.scroll0 = self.scroll
+        self.scroll = max(0, min(self.most, self.scroll0 - dy))
+        self.body.y = -self.scroll
+        self._place_thumb()
+        self.app.refresh()
+
+    def drop(self):
+        self.dragging = False
+
+    def target(self, x, y):
+        return self.back.group if self.back.hit(x, y) else None
+
+    def tap(self, x, y):
+        if self.back.hit(x, y):
+            self.app.pop()
+
+    def swipe(self, dx):
+        if dx > 0:
+            self.app.pop()
+
+
+class CreditsScreen(TextScreen):
+    """Who made what the flasher stands on."""
+
+    def title(self):
+        return "Credits"
+
+    def lines(self):
+        H, T, D = ui.NAME, ui.BODY, ui.TEXT
+        return (
+            (H, "FM-1 Firmware Flasher", ui.CYAN),
+            (T, "By John Park for Adafruit, 2026. Open source under the GPL-3.0 license.", D),
+            (H, "The FM-1 Firmware Hub", ui.CYAN),
+            (T, "thefirmwarehub.com, by zvenson: the FM-1 community firmware hub. Its catalog, "
+                "packages and pictures are what Catalog downloads and this flasher installs.", D),
+            (H, "The firmware authors", ui.CYAN),
+            (T, "Every firmware belongs to its authors, each under its own license, shown on its page.", D),
+            (H, "M-VAVE", ui.CYAN),
+            (T, "The FM-1, its V15 firmware and factory voices, and fm1_open (Apache-2.0).", D),
+            (H, "CircuitPython and Adafruit", ui.CYAN),
+            (T, "CircuitPython, displayio and its libraries, and the Metro ESP32-P4.", D),
+            (H, "TinyUSB", ui.CYAN),
+            (T, "The USB host that talks to the FM-1.", D),
+            (H, "Fonts", ui.CYAN),
+            (T, "Inter and JetBrains Mono, under the SIL Open Font License.", D),
+        )
+
+
 class SettingsScreen(Screen):
 
     def build(self):
@@ -137,6 +247,13 @@ class SettingsScreen(Screen):
             self.scroll_g.append(ui.text(ui.NAME, "Scroll pages", ui.FG, sx + 12, sy + h // 2, (0, 0.5)))
             self.scroll_g.append(_switch(sx + w - 58, sy + (h - 22) // 2, on))
             g.append(self.scroll_g)
+        last = self.scroll_rect or self.wifi_rect
+        self.credits_rect = (x, last[1] + h + 8, w, h)
+        cx, cy = x, last[1] + h + 8
+        self.credits_g = ui.outlined(*self.credits_rect, ui.PANEL, ui.LINE)
+        self.credits_g.append(ui.text(ui.NAME, "Credits", ui.FG, cx + 12, cy + h // 2, (0, 0.5)))
+        self.credits_g.append(ui.triangle(cx + w - 16, cy + h // 2 - 6, 7, 12, ui.DIM, False))
+        g.append(self.credits_g)
         self.group = g
         return g
 
@@ -147,6 +264,8 @@ class SettingsScreen(Screen):
             return self.wifi_g
         if self.scroll_rect and _hit(self.scroll_rect, x, y, 3):
             return self.scroll_g
+        if _hit(self.credits_rect, x, y, 3):
+            return self.credits_g
         return None
 
     def tap(self, x, y):
@@ -156,6 +275,8 @@ class SettingsScreen(Screen):
             self.app.push(WifiScreen(self.app))
         elif self.scroll_rect and _hit(self.scroll_rect, x, y, 3):
             self.toggle_scroll()
+        elif _hit(self.credits_rect, x, y, 3):
+            self.app.push(CreditsScreen(self.app))
 
     def toggle_scroll(self):
         """Scroll pages on or off: the list under Settings becomes the other kind."""

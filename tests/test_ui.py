@@ -50,6 +50,9 @@ class Catalog(unittest.TestCase):
         self.assertEqual(C.display_name(entries[0]), "M-VAVE V15")
         self.assertEqual(C.display_name(entries[2]), "SLOOP 2.8.3")
 
+    def test_plain(self):
+        self.assertEqual(C.plain("its **visualiser** paints"), "its visualiser paints")
+
     def test_paging(self):
         items = list(range(17))
         self.assertEqual(C.page_count(17, 8), 3)
