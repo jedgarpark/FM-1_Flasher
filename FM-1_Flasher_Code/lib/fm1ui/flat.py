@@ -124,7 +124,7 @@ class Canvas:
                 left = left - 256 if left > 127 else left
                 gx = x0 + pen + left
                 sx = t[o + 2] | (t[o + 3] << 8)
-                if 0 <= gx and gx + gw <= self.bmp.width:
+                if gx >= 0 and gx + gw <= self.bmp.width:
                     bitmaptools.blit(
                         self.bmp,
                         sheet,

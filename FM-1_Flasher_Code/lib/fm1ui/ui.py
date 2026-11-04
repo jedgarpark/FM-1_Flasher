@@ -118,7 +118,7 @@ class Font:
                 left = left - 256 if left > 127 else left
                 sx = t[o + 2] | (t[o + 3] << 8)
                 x = pen + left
-                if 0 <= x and x + gw <= bmp.width:
+                if x >= 0 and x + gw <= bmp.width:
                     bitmaptools.blit(bmp, self.sheet, x, 0, x1=sx, y1=0, x2=sx + gw, y2=self.height)
             pen += t[o + 6]
         return bmp, pad
