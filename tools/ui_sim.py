@@ -10,7 +10,8 @@ Needs a venv with adafruit-blinka-displayio, adafruit-circuitpython-display-text
 adafruit-circuitpython-bitmap-font, Pillow and (for the window) pygame.
 The FM-1 is faked (--identity) and installs only animate the progress screen.
 
-Script steps (--do, in order): "drag DX[,STEPS]" (drag and let go; Metro list), "hold DX", "tap X,Y", "press X,Y" (touch down, held), "swipe DX", "shot FILE.png",
+Script steps (--do, in order): "drag DX[,STEPS]" (drag and let go; Metro list), "hold DX",
+"vdrag DY[,STEPS]", "vhold DY" (up and down: Metro details), "tap X,Y", "press X,Y" (touch down, held), "swipe DX", "shot FILE.png",
 "identity ID" (or "identity none": unplugged), "connect", "phase NAME PCT", "wait", "found",
 "finish ok [MSG]", "finish fail MSG", "steps N" (run the loop N times), "until MODE" (run the
 loop until the Update screen reaches plan, run, done or error; "until Pictures" also works,
@@ -287,6 +288,22 @@ def run_script(app, touch, steps):
                 app.step()
                 time.sleep(0.03)
             touch.queue.append(("up",))
+            app.step()
+        elif cmd == "vdrag":  # "vdrag DY" or "vdrag DY,STEPS": a finger dragged up (DY < 0) or down, then let go
+            dy, _, n = arg.partition(",")
+            dy, n = int(dy), int(n or 8)
+            touch.queue.append(("down", 160, 120))
+            app.step()
+            for i in range(1, n + 1):
+                touch.queue.append(("vdrag", dy * i // n, 160, 120))
+                app.step()
+                time.sleep(0.03)
+            touch.queue.append(("up",))
+            app.step()
+        elif cmd == "vhold":  # "vhold DY": drag DY px up or down and keep the finger down
+            touch.queue.append(("down", 160, 120))
+            app.step()
+            touch.queue.append(("vdrag", int(arg), 160, 120))
             app.step()
         elif cmd == "release":  # let go after "hold"
             touch.queue.append(("up",))

@@ -4,7 +4,8 @@ and an FM-1 probe. The hardware is passed in, so the same code runs on the
 Feather (fm1ui.device) and in the desktop simulator (tools/ui_sim.py).
 
 display   a displayio display with auto_refresh off
-touch     .event() -> ("down", x, y) when a touch starts, then ("tap", x, y),
+touch     .event() -> ("down", x, y) when a touch starts, ("drag", dx, x0, y0)
+          or ("vdrag", dy, x0, y0) as it moves (Gestures), then ("tap", x, y),
           ("swipe", dx) or ("up",) when it ends; or None
 probe     .connect() -> the FM-1's identity, or None if none answered
           (Connect FM-1: nothing is sent to the FM-1 before it);
@@ -162,10 +163,10 @@ class App:
         if ev:
             if ev[0] == "down":
                 self.press(screen, ev[1], ev[2])
-            elif ev[0] == "drag":  # only screens that scroll (fm1ui.flat) take these
-                if hasattr(screen, "drag"):
+            elif ev[0] in ("drag", "vdrag"):  # only screens that scroll (fm1ui.flat) take these
+                if hasattr(screen, ev[0]):
                     self.unpress()
-                    screen.drag(ev[1], ev[2], ev[3])
+                    getattr(screen, ev[0])(ev[1], ev[2], ev[3])
             elif getattr(screen, "dragging", False):  # the finger let go after a drag
                 screen.drop()
                 self.unpress()
@@ -204,31 +205,39 @@ class App:
 
 class Gestures:
     """Turns touch samples into taps and horizontal swipes. Feed it
-    sample(point or None) each poll; event() returns what finished."""
+    sample(point or None) each poll; event() returns what finished.
+    A move becomes a drag one way or the other, and stays that way until
+    the finger lifts: sideways ("drag", dx, x0, y0) or, when it's mostly up
+    or down, ("vdrag", dy, x0, y0)."""
 
     SWIPE_PX = 60
     TAP_PX = 30  # a fingertip rolls 20-30 px on a firm tap
-    DRAG_PX = 12  # sideways this far, a drag starts: ("drag", dx, x0, y0) as it moves
+    DRAG_PX = 12  # this far, a drag starts
 
     def __init__(self):
         self.start = None
         self.last = None
-        self.dragging = False
+        self.dragging = None  # "x", "y" or None
         self.events = []
 
     def sample(self, point):
         if point is not None:
             if self.start is None:
                 self.start = point
-                self.dragging = False
+                self.dragging = None
                 self.events.append(("down", point[0], point[1]))
             elif point != self.last:
                 dx, dy = point[0] - self.start[0], point[1] - self.start[1]
-                if self.dragging or (abs(dx) >= self.DRAG_PX and abs(dx) > abs(dy)):
-                    self.dragging = True
-                    if self.events and self.events[-1][0] == "drag":
+                if self.dragging is None:
+                    if abs(dx) >= self.DRAG_PX and abs(dx) > abs(dy):
+                        self.dragging = "x"
+                    elif abs(dy) >= self.DRAG_PX and abs(dy) > 2 * abs(dx):
+                        self.dragging = "y"
+                if self.dragging:
+                    kind, d = ("drag", dx) if self.dragging == "x" else ("vdrag", dy)
+                    if self.events and self.events[-1][0] == kind:
                         self.events.pop()  # only the latest position matters
-                    self.events.append(("drag", dx, self.start[0], self.start[1]))
+                    self.events.append((kind, d, self.start[0], self.start[1]))
             self.last = point
             return
         if self.start is None:
