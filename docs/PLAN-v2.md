@@ -5,8 +5,15 @@ Shield, which downloads firmwares from thefirmwarehub.com itself over WiFi.
 The v1 Feather flasher (PLAN.md) is deprecated as of 3 November 2026: the
 Metro does everything it did and more, and its changes since #40 were never
 tested on the Feather. Its last tested version is the tag
-`v1-feather-final` (03eb577, before #40). Its code stays in the repo for now;
-removing the Feather-only parts is a separate cleanup after Phase 3.
+`v1-feather-final` (03eb577, before #40). The Feather-only code was removed
+on 4 November 2026: its hardware in `fm1ui.device` (now it takes everything
+from `fm1ui.metro_p4`), the 480x320 layout and the layout switches only it
+used, the Feather and Pico REPL scripts in `device/`, its CircuitPython
+patches (`patches/` now holds the Metro build's two), and the Feather parts
+of `deploy.py`, `make_splash.py` and `ui_sim.py`. `fm1usb` clears the
+endpoints' data toggles on every board now. The Feather-era RAM workarounds
+(the install through a reload, the picture pool, packed fonts) are still in
+place: relaxing them is the next piece of work.
 
 ## Hardware
 
@@ -223,6 +230,11 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       (the favourites tab is now just the heart); the choice is
       kept in the state. Update firmwares copies the dates into an older
       card's unchanged firmwares (at once when there's nothing to download).
+
+- [ ] Move the OK button after an install from the centre to the right,
+      where Install is on the details screen: a centred OK sits over the
+      list's Catalog button, so the tap that closes it often opens Catalog
+      too (user report, 4 November 2026; `OK_BTN` in `fm1ui/layout.py`).
 
 ## Upstream and the hub
 

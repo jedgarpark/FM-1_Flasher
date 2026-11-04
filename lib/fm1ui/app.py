@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The flasher UI's main loop: a stack of screens over a display, touch input
 and an FM-1 probe. The hardware is passed in, so the same code runs on the
-Feather (fm1ui.device) and in the desktop simulator (tools/ui_sim.py).
+Metro (fm1ui.device) and in the desktop simulator (tools/ui_sim.py).
 
 display   a displayio display with auto_refresh off
 touch     .event() -> ("down", x, y) when a touch starts, ("drag", dx, x0, y0)

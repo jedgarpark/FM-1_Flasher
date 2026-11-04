@@ -1,16 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The Metro ESP32-P4's hardware for fm1ui.device (docs/PLAN-v2.md, Phase 1).
 
-fm1ui.device imports these over its own (v1's Feather RP2350 and TFT
-FeatherWing) when it runs on a Metro ESP32-P4, so v1 never loads this file:
+fm1ui.device imports these:
 
 - display: the 2.8" TFT Touch Shield's ILI9341, 320x240, on board.SPI()
   through the ICSP header (CS D10, DC D9), no jumpers;
 - touch: its FT6206 on I2C at 0x38, reporting portrait;
 - SD card: the Metro's own slot, 4-bit SDIO, on pins of its own (so the
-  card never shares a bus with the display, unlike v1, DEVNOTES 6.18);
+  card never shares a bus with the display, unlike the Feather, DEVNOTES 6.18);
 - USB host: the P4's USB-A port (needs the 512-byte enumeration buffer
-  build with the TinyUSB DWC2 abort fix).
+  build with the TinyUSB DWC2 abort fix, patches/README.md).
 """
 import time
 
@@ -19,7 +18,6 @@ import displayio
 import fourwire
 import supervisor
 
-import fm1usb
 from fm1ui import app as A
 
 W, H = 320, 240
@@ -69,8 +67,9 @@ def splash(display):
 
 
 def display_redo(display):
-    """v1 sends its panel's setup again here (DEVNOTES 6.20); the shield
-    hasn't needed that. Holds the splash SPLASH_HOLD s, as v1 does."""
+    """Hold the splash SPLASH_HOLD s, just before the first screen. (The
+    Feather's panel needed its setup sent again here, DEVNOTES 6.20; the
+    shield hasn't.)"""
     global _splash_bmp
     if not _started() or _splash_bmp is None:
         return
@@ -82,9 +81,7 @@ def display_redo(display):
 
 
 def host_setup(spi):
-    """5 V on the USB-A port and the host on it. The FM-1 stays enumerated
-    through a soft reload, so transports clear its endpoints' data toggles
-    (fm1usb.CLEAR_HALT)."""
+    """5 V on the USB-A port and the host on it."""
     global _host
     if _host is None:
         import digitalio
@@ -92,7 +89,6 @@ def host_setup(spi):
         power = digitalio.DigitalInOut(board.USB_HOST_POWER)
         power.switch_to_output(value=True)
         _host = (power, usb_host.Port(board.USB_HOST_DP, board.USB_HOST_DM))
-    fm1usb.CLEAR_HALT = True
 
 
 def mount_sd(spi):

@@ -1,37 +1,36 @@
 # CircuitPython patches for the FM-1 flasher
 
-All against **CircuitPython 10.3.1** unless the table says otherwise. Apply each from the path it was made in
-(`git apply` from the CircuitPython root, or from the submodule for
-`tinyusb-*` and `pico-pio-usb-*`). See `DEVNOTES.md` §4–5 for the evidence
-behind each verdict.
+The flasher runs on an Adafruit Metro ESP32-P4 with a CircuitPython 11 build
+that has two changes. Both are against CircuitPython `main` at 2b8803867c
+(after adafruit/circuitpython#11726; 11.0.0-alpha.2 and later).
 
 | Patch | Applies in | What it does | Needed? |
 |---|---|---|---|
-| `tinyusb-enum-retry.diff` | `lib/tinyusb` | Retries a failed root-port enumeration (up to 10 attempts, 500 ms apart) while the device is still connected. The FM-1 always fails its first enumeration after a bus reset. | **Yes**, on any host controller |
-| `tinyusb-enum-retry-stats.diff` | `lib/tinyusb` | The same retry, plus a weak `fm1_stats[]` counter array for `device/fm1_stats.py` | Test builds only |
-| `feather-enum-bufsize.diff` | CircuitPython root | `CFG_TUH_ENUMERATION_BUFSIZE=512` for the Feather RP2040 USB Host (the FM-1's descriptor is 293 bytes, the default is 288) | **Yes** |
-| `feather-max3421e.diff` | CircuitPython root | Feather RP2040 USB Host build for the MAX3421E FeatherWing: `CIRCUITPY_MAX3421E = 1`, `CIRCUITPY_USB_HOST = 0`, `board.c` guard, 512 buffer, 120 MHz | **Yes**, for the recommended hardware |
-| `cp11-feather-pio.diff` | CircuitPython root (**11.0.0-alpha.2**) | The Feather's built-in PIO port on CircuitPython 11: `CFG_TUH_ENUMERATION_BUFSIZE=512` and 120 MHz. Nothing else is needed. | **Yes**, for CircuitPython 11 on the PIO port |
-| `pico-pio-usb-fm1.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` | Disconnect check while waiting for reset; 20-frame disconnect debounce; full-speed reply timeout 3 → 20 µs | Only for the built-in PIO port. Keep the first two; the timeout change isn't needed |
-| `pico-pio-usb-fm1-stats.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` | The same, plus counters (RX waits, absorbed glitches, disconnects) | Test builds only |
-| `pico-pio-usb-cp11-idle-disconnect.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` (**11.0.0-alpha.2**) | Disconnect check while waiting for reset: a port marked connected but still waiting for its bus reset drops the device after 20 SE0 frames | **Yes**, for the PIO port on CircuitPython 11 (DEVNOTES §6.7) |
-| `cp11-feather-pigtail.diff` | CircuitPython root (**11.0.0-alpha.2**) | `cp11-feather-pio.diff` plus `FM1_NO_DEFAULT_HOST`: the board doesn't claim GPIO16/17 at boot, so a script can call `usb_host.Port(board.D11, board.D12)` for a USB-A pigtail | Only for the pigtail option |
-| `cp11-feather-rp2350-max3421e.diff` | CircuitPython root (**11.0.0-alpha.2**) | Feather RP2350 build for the MAX3421E FeatherWing: `CIRCUITPY_MAX3421E = 1`, `CIRCUITPY_USB_HOST = 0`, `CFG_TUH_ENUMERATION_BUFSIZE=512`. Default clock (the 120 MHz is for PIO-USB only). Also fixes the MAX3421E driver for a shared SPI bus: `tuh_task()` runs only when the display or SD card isn't holding the bus | **Yes**, for the Feather RP2350 + MAX3421E wing (DEVNOTES §6.15–6.16) |
-| `cp11-feather-rp2350-max3421e-stats.diff` | CircuitPython root (**11.0.0-alpha.2**), clean tree; includes the TinyUSB file | `cp11-feather-rp2350-max3421e.diff` plus debug counters (`fm1_stats`: MAX3421E interrupts by type, NAKs, `tuh_task()` time, SPI lock holder and `wait_for_lock()` timeouts) read with `device/fm1_max_stats.py`, and the console on TX (GPIO0) as well as USB | Debugging only (DEVNOTES §6.18) |
-| `pico-pio-usb-cp11-stats.diff` | `ports/raspberrypi/lib/Pico-PIO-USB` (**11.0.0-alpha.2**) | Connect/disconnect counters for `device/fm1_cycle_watch.py`, plus the disconnect check behind `FM1_IDLE_DISCONNECT` (default off) | Test builds only; use instead of the patch above |
+| `cp11-metro-p4-enum-bufsize.diff` | CircuitPython root | `CFG_TUH_ENUMERATION_BUFSIZE=512` for the Metro ESP32-P4. The FM-1's configuration descriptor is 293 bytes and the default buffer is 288, so the stock build never mounts it. | **Yes** |
+| `tinyusb-dwc2-abort.diff` | `lib/tinyusb` | DWC2 host: retire an aborted non-periodic DMA channel when it halts. Without it, reads from the FM-1 time out after a transfer is aborted. Posted upstream as hathach/tinyusb#4405. | **Yes** |
 
-**On CircuitPython 11** (11.0.0-alpha.2 and `main` as of 2026-10-27), TinyUSB
-already retries a failed enumeration, so the `tinyusb-*` patches aren't needed.
-The PIO port needs `CFG_TUH_ENUMERATION_BUFSIZE=512` and 120 MHz
-(`cp11-feather-pio.diff`, the same lines as `feather-enum-bufsize.diff` plus
-the clock flags below), and the Pico-PIO-USB disconnect check
-(`pico-pio-usb-cp11-idle-disconnect.diff`). Connect the FM-1 through a long
-enough cable: short cables leave it silent (DEVNOTES §6.7).
+## Building
 
-The 120 MHz clock (`-DSYS_CLK_HZ=120000000 -DPLL_SYS_VCO_FREQ_HZ=1440000000
--DPLL_SYS_POSTDIV1=6 -DPLL_SYS_POSTDIV2=2`) gives Pico-PIO-USB integer clock
-dividers. It's **required** on the PIO port: at the default 125 MHz about 30 %
-of USB writes to the FM-1 failed.
+```sh
+git clone https://github.com/adafruit/circuitpython && cd circuitpython
+git checkout 2b8803867c
+python3 tools/ci_fetch_deps.py espressif
+git apply /path/to/patches/cp11-metro-p4-enum-bufsize.diff
+(cd lib/tinyusb && git apply /path/to/patches/tinyusb-dwc2-abort.diff)
+./ports/espressif/esp-idf/install.sh esp32p4
+source ./ports/espressif/esp-idf/export.sh
+pip install -r requirements-dev.txt "ninja<1.13"   # newer ninja breaks the IDF build
+make -C mpy-cross                                  # also what tools/deploy.py needs
+make -C ports/espressif BOARD=adafruit_metro_esp32p4 build-adafruit_metro_esp32p4/firmware.uf2
+```
 
-Long TinyUSB enumeration waits were tried and made things worse. They are not
-in any patch here.
+Copy `firmware.uf2` to the board's METROP4BOOT drive (double-click reset).
+A Metro without TinyUF2 needs it first: BOOT + reset for the ROM loader,
+then `esptool` writes TinyUF2's `combined.bin` at 0x0.
+
+`docs/PLAN-v2.md` ("Upstream and the hub") tracks asking for both changes
+upstream, so the flasher can run on stock CircuitPython.
+
+The Feather v1 flasher's patches (PIO-USB, MAX3421E, TinyUSB enumeration
+retry) are at the tag `v1-feather-final`, with the evidence in `DEVNOTES.md`
+§4–5.

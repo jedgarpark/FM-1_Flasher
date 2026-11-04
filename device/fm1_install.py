@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Install a firmware folder (meta.json + .fwsc) on the FM-1 from the device.
 
-From the REPL, with the USB host already started (e.g. fm1_max_setup.py):
+From the REPL, with the USB host already started (e.g. metro_install.py):
     import fm1_install
     fm1_install.run("/firmware/sloop")            # dry run: identity/capability only
     fm1_install.run("/firmware/sloop", go=True)   # writes the FM-1

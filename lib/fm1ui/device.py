@@ -1,167 +1,33 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""The Feather's hardware for the UI: the TFT FeatherWing V2 3.5" (HX8357
-display, FT5336 touch, microSD), the FM-1 on the USB host port, and running
-an install with a clean heap.
+"""The flasher's hardware for the UI, the FM-1 on the USB host port, and
+running an install with a clean heap.
+
+The display, touch, SD card, USB host and WiFi come from fm1ui.metro_p4
+(Metro ESP32-P4 with the 2.8" TFT Touch Shield). v1's Feather code is at
+the tag v1-feather-final.
 
 An install is started by saving the firmware's slug and name in NVM and reloading;
 code.py then runs it before building any other screen. That keeps the
-heap unfragmented, which CircuitPython 11's hashlib needs (DEVNOTES §6.7).
+heap unfragmented (DEVNOTES §6.7).
 """
 import json
 import time
 
-import board
-import displayio
-import fourwire
 import microcontroller
 import supervisor
 import usb.core
 
 import fm1usb
-from fm1ui import app as A
 from fm1ui import catalog as C
+from fm1ui.metro_p4 import (W, H, TOUCH_CAL, SPLASH, SPLASH_HOLD, display_setup, splash,  # noqa: F401
+                            display_redo, host_setup, mount_sd, Touch, Network)
 
-# fm1proto and fm1update (the installer, ~20 KB of RAM) are imported only by
-# run(), which code.py calls after a reload with a fresh heap. The list
-# screen's FM-1 probe below needs just the identity query.
+# fm1proto and fm1update (the installer) are imported only by run(), which
+# code.py calls after a reload with a fresh heap. The list screen's FM-1
+# probe below needs just the identity query.
 
-W, H = 480, 320
-# FT5336 points come in the panel's portrait frame. Measured on the TFT
-# FeatherWing V2 3.5" by holding nine targets (logs/cal2.log): display
-# x = 1.077 * touch y - 17.7 and y = 321.2 - 1.087 * touch x, which is within
-# ~15 px everywhere; the plain swap and flip was 20-30 px off near the edges.
-# (ax, bx, ay, by): x = ax * raw_y + bx, y = ay * raw_x + by
-TOUCH_CAL = (1.077, -17.7, -1.087, 321.2)
 NVM_TAG = b"FM1P"
 ANSWER_WAIT_S = 15  # for the FM-1 to answer again after the install's reload
-
-# A build with max3421e hosts the FM-1 through the MAX3421E USB Host
-# FeatherWing (CS D10, IRQ D9), so the TFT's CS and DC jumpers are cut and
-# wired to D11 and the pin after D13 (D4 on the Feather RP2350's silkscreen,
-# board.D12). DEVNOTES §6.15.
-try:
-    import max3421e
-except ImportError:
-    max3421e = None
-_host = None  # the running Max3421E; usb.core needs it kept alive
-
-
-def host_setup(spi):
-    """Start USB host on the wing, if this build has one. Call after
-    display_setup(), which releases the shared SPI bus."""
-    global _host
-    if max3421e is not None and _host is None:
-        _host = max3421e.Max3421E(spi, chip_select=board.D10, irq=board.D9)
-
-
-# The TFT V2's panel reset comes from its own voltage supervisor, not the
-# Feather's reset. After a power-on (the EN switch), on battery, the panel
-# often came up white: the setup was sent, then the panel was reset again.
-# Plugging into USB did the same, but reports a reset-pin start, not a
-# power-on. So on the first run after any start (not a reload), send the
-# setup again just before the first screen. By then the App has loaded,
-# about 2 s later, which has been enough: no extra wait is needed
-# (DEVNOTES §6.20).
-
-
-def _started():
-    return supervisor.runtime.run_reason == supervisor.RunReason.STARTUP
-
-
-def _display(spi):
-    import adafruit_hx8357
-    if max3421e is not None:
-        dc, cs = board.D12, board.D11
-    else:
-        dc, cs = board.D10, board.D9
-    bus = fourwire.FourWire(spi, command=dc, chip_select=cs, baudrate=24_000_000)
-    return adafruit_hx8357.HX8357(bus, width=W, height=H, auto_refresh=False)
-
-
-def display_setup():
-    global _display_t
-    displayio.release_displays()
-    try:  # a card mounted by the last run, before a soft reload
-        import storage
-        storage.umount("/sd")
-    except (OSError, ValueError):
-        pass
-    spi = board.SPI()
-    # A lock the last run left on the shared bus would stall the display's
-    # init forever ("display init failed" once interrupted).
-    if not spi.try_lock():
-        print("SPI was left locked; unlocking")
-    spi.unlock()
-    _display_t = time.monotonic()
-    return _display(spi), spi
-
-
-_display_t = 0  # when display_setup() sent the panel its setup
-
-SPLASH = "/splash.bmp"  # from art/splash_text.png (tools/deploy.py)
-SPLASH_HOLD = 2.0  # seconds the splash stays up after display_redo()
-_splash_bmp = None
-
-
-def _show_splash(display):
-    # A new Group each time: assigning the current root_group again is a
-    # no-op, so it wouldn't redraw the panel that display_redo() wiped.
-    g = displayio.Group()
-    g.append(displayio.TileGrid(_splash_bmp, pixel_shader=_splash_bmp.pixel_shader))
-    display.root_group = g
-    display.refresh()
-
-
-def splash(display):
-    """After a start (not a reload), show the splash until the first screen.
-    Reloads keep the console's note (fm1ui.console) instead. display_redo()
-    wipes the panel, then draws the splash again and holds it SPLASH_HOLD s,
-    so it shows even on a start where the panel came up white."""
-    global _splash_bmp
-    if not _started():
-        return
-    try:
-        _splash_bmp = displayio.OnDiskBitmap(SPLASH)  # from flash, not the SD's bus
-    except OSError:
-        return
-    _show_splash(display)
-
-
-def display_redo(display):
-    """After a start (not a reload), send the panel its setup again over the
-    display's bus. Call just before the first screen: nothing drawn before it
-    would survive."""
-    if not _started():
-        return
-    print("start: panel setup at %.1f s, again at %.1f s" % (_display_t, time.monotonic()))
-    from adafruit_hx8357 import _INIT_SEQUENCE as seq
-    i = 0
-    while i < len(seq):  # command, length (bit 7: a delay byte follows), data
-        n = seq[i + 1] & 0x7F
-        display.bus.send(seq[i], seq[i + 2:i + 2 + n])
-        i += 2 + n
-        if seq[i - 1 - n] & 0x80:
-            time.sleep((500 if seq[i] == 255 else seq[i]) / 1000)
-            i += 1
-    global _splash_bmp
-    if _splash_bmp is not None:
-        prev = display.root_group  # the caller's first screen, if already set
-        _show_splash(display)
-        time.sleep(SPLASH_HOLD)
-        display.root_group = prev
-        _splash_bmp = None
-
-
-def mount_sd(spi):
-    """Mount the wing's microSD at /sd. False if there is no card."""
-    try:
-        import sdcardio
-        import storage
-        sd = sdcardio.SDCard(spi, board.D5)
-        storage.mount(storage.VfsFat(sd), "/sd")
-        return True
-    except (OSError, ValueError, RuntimeError):
-        return False
 
 
 def firmware_root(sd):
@@ -173,52 +39,6 @@ def firmware_root(sd):
             pass
     return None
 
-
-class Touch:
-    """FT5336 polled into taps and swipes, in display coordinates."""
-
-    def __init__(self, cal=TOUCH_CAL, debug=False):
-        import adafruit_ft5336
-        self.ft = adafruit_ft5336.Adafruit_FT5336(board.I2C(), max_touches=1)
-        self.cal = cal
-        self.debug = debug
-        self.first = None
-        self.gestures = A.Gestures()
-
-    def map(self, x, y):
-        ax, bx, ay, by = self.cal
-        return (min(W - 1, max(0, int(ax * y + bx))),
-                min(H - 1, max(0, int(ay * x + by))))
-
-    def raw(self):
-        try:
-            if self.ft.touched:
-                pts = self.ft.points
-                if pts:
-                    return pts[0][0], pts[0][1]
-        except OSError:  # an I2C hiccup reads as no touch
-            pass
-        return None
-
-    def event(self):
-        p = self.raw()
-        if self.debug and p and self.first is None:
-            self.first = p
-        self.gestures.sample(self.map(*p) if p else None)
-        ev = self.gestures.event()
-        if self.debug and p is None and self.first is not None:
-            print("touch raw", self.first, "mapped", self.map(*self.first), "->", ev)
-            self.first = None
-        return ev
-
-
-# Everything above is v1's hardware (Feather RP2350, TFT FeatherWing). On a
-# Metro ESP32-P4 the same names come from fm1ui.metro_p4 instead, which v1
-# never loads (docs/PLAN-v2.md).
-Network = None  # v1 has no WiFi: no Update firmwares
-if getattr(board, "board_id", "") == "adafruit_metro_esp32p4":
-    from fm1ui.metro_p4 import (W, H, TOUCH_CAL, SPLASH, SPLASH_HOLD, display_setup, splash,  # noqa: F811
-                                display_redo, host_setup, mount_sd, Touch, Network)
 
 # fm1proto.frame(CMD_IDENTITY): the identity query, which never changes
 IDENTITY_QUERY = bytes.fromhex("f0003245000000407ff7")

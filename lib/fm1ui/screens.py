@@ -133,8 +133,6 @@ class ListScreen(Screen):
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
         # header
-        if L.TITLE_AT:
-            g.append(ui.text(ui.NAME, "FM-1 Flasher", ui.CYAN, L.TITLE_AT[0], L.TITLE_AT[1], (0, 0.5)))
         tag_color = ui.kind_color(self.tag) if self.tag else ui.CYAN
         self.tab_tag = ui.Button(tag_label(self.tag), *L.TAG_BTN, edge=tag_color,
                                  color=tag_color if self.tag else ui.FG)
@@ -185,27 +183,22 @@ class ListScreen(Screen):
         g.append(self.view_g)
         # The footer's buttons, left to right, as (rect, name, group or None).
         self.footer = [(self.prev, "prev", self.arrows[0]), (L.VIEW, "view", self.view_g)]
-        if app.updater is not None and L.SETTINGS_BTN:
+        if app.updater is not None:
             sx, sy, sw, sh = L.SETTINGS_BTN
             gear = ui.outlined(sx, sy, sw, sh, ui.PANEL, ui.LINE)
             gear.append(ui.gear(sx + sw // 2, sy + sh // 2, min(sw, sh) // 2 - 5, ui.FG, ui.PANEL))
             g.append(gear)
             self.footer.append((L.SETTINGS_BTN, "settings", gear))
-        update = app.updater is not None and L.UPDATE_BTN
+        update = app.updater is not None
         if update:
             btn = ui.Button("Catalog", *L.UPDATE_BTN, name=ui.SMALL)
             g.append(btn.group)
             self.footer.append((L.UPDATE_BTN, "update", btn.group))
-        if L.PAGE_BETWEEN:  # between the last left button and the next arrow
-            lx, _, lw, _ = self.footer[-1][0]
-            px = (lx + lw + L.NEXT[0]) // 2
-        else:
-            px = W // 2
+        lx, _, lw, _ = self.footer[-1][0]  # between the last left button and the next arrow
+        px = (lx + lw + L.NEXT[0]) // 2
         page = ("%d/%d" if update else "Page %d of %d") % (self.page + 1, pages)
         g.append(ui.text(ui.SMALL, page, ui.FG, px, L.PAGE_Y, (0.5, 0.5)))
         self.footer.append((self.next, "next", self.arrows[1]))
-        if app.updated and L.DATE_Y:
-            g.append(ui.text(ui.SMALL, "Catalog " + C.nice_date(app.updated), ui.DIM, W // 2, L.DATE_Y, (0.5, 0.5)))
         self.pages = pages
         self.group = g
         return g
@@ -239,7 +232,7 @@ class ListScreen(Screen):
         tx, ty = x + (cw - thumb) // 2, y + L.CARD_THUMB_Y
         g.append(ui.thumbnail(self.app.path(e.slug, "thumb.bmp"), tx, ty, thumb, e.version, slot))
         if installed:
-            bx, bw = (x + 4, cw - 8) if L.BAND_FULL else (tx, thumb)
+            bx, bw = x + 4, cw - 8  # across the card, not just the picture
             g.append(ui.rect(bx, ty + thumb - 12, bw, 12, ui.CYAN))
             g.append(ui.text(ui.SMALL, "INSTALLED", ui.BG, bx + bw // 2, ty + thumb - 6, (0.5, 0.5)))
         fav = e.slug in self.app.state.favorites
@@ -521,7 +514,7 @@ class DetailScreen(Screen):
         """Remove, on boards that can rewrite the card's list (the Metro);
         never for M-VAVE V15, the way back to the factory firmware."""
         self.remove_btn = None
-        if L.REMOVE_BTN and self.app.updater is not None and self.entry.product != STOCK_PRODUCT:
+        if self.app.updater is not None and self.entry.product != STOCK_PRODUCT:
             self.remove_btn = ui.Button("Remove", *L.REMOVE_BTN, edge=ui.WARN, color=ui.WARN)
             g.append(self.remove_btn.group)
 
@@ -544,10 +537,7 @@ class DetailScreen(Screen):
                                  edge=ui.CYAN if ready else ui.LINE, color=ui.BG if ready else ui.LINE)
         g.append(self.install.group)
         nx, ny = L.NOTE_AT
-        if L.NOTE_W:
-            g.append(wrapped(ui.SMALL, note, color, nx, ny - 7, L.NOTE_W, (0, 0.5), pitch=14))
-        else:
-            g.append(ui.text(ui.SMALL, note, color, nx, ny, (0, 0.5)))
+        g.append(wrapped(ui.SMALL, note, color, nx, ny - 7, L.NOTE_W, (0, 0.5), pitch=14))
         return g
 
     def target(self, x, y):

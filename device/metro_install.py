@@ -16,9 +16,6 @@ import storage
 import usb_host
 
 import fm1_install
-import fm1usb
-
-fm1usb.CLEAR_HALT = True
 
 power = digitalio.DigitalInOut(board.USB_HOST_POWER)
 power.switch_to_output(value=True)
