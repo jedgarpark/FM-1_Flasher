@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
 """Prepare firmware folders for the flasher's microSD card.
 
@@ -44,7 +46,7 @@ import re
 import sys
 import urllib.request
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "FM-1_Flasher_Code", "lib"))
 import fm1catalog as K  # noqa: E402
 import fm1proto as P  # noqa: E402
 

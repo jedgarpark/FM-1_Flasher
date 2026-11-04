@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
 """Desktop FM-1 flasher over USB-MIDI (python-rtmidi): the reference for the
 CircuitPython device, run from a computer where problems are easy to see.
@@ -20,7 +22,7 @@ import re
 import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "lib"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "FM-1_Flasher_Code", "lib"))
 import fm1proto as P  # noqa: E402
 import fm1update as U  # noqa: E402
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
 """Run the flasher UI on the desktop with Blinka displayio.
 
@@ -34,7 +36,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "lib"))
+sys.path.insert(0, os.path.join(ROOT, "FM-1_Flasher_Code", "lib"))
 
 import busdisplay  # noqa: E402
 from displayio._area import Area  # noqa: E402
@@ -45,7 +47,7 @@ from fm1ui import catalog as C  # noqa: E402
 from fm1ui import screens as S  # noqa: E402
 from fm1ui import ui  # noqa: E402
 
-ui.FONT_DIR = os.path.join(ROOT, "fonts")
+ui.FONT_DIR = os.path.join(ROOT, "FM-1_Flasher_Code", "fonts")
 
 
 class SimDisplay(busdisplay.BusDisplay):

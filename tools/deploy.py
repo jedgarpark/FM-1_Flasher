@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
 """Copy the flasher UI to a CIRCUITPY drive, compiled to .mpy.
 
   .venv/bin/python tools/deploy.py --mpy-cross ref/cp-metro-p4/mpy-cross/build/mpy-cross
 
-Copies code.py, fonts/ (.fmf), the splash (art/splash_text_320.png as a
-16-colour splash.bmp, needs Pillow), lib/fm1ui and the fm1 libraries, and sets
+Copies FM-1_Flasher_Code (what the guide's Project Bundle has) to the board:
+code.py, fonts/ (.fmf), the splash (art/splash_text_320.png as a 16-colour
+splash.bmp, needs Pillow; also refreshed in FM-1_Flasher_Code), and lib/ with
+fm1ui and the fm1 libraries compiled to .mpy. It also sets
 CIRCUITPY_SDCARD_USB = false in settings.toml (takes effect after a reset). The
 mpy-cross must match the board's CircuitPython version. A .py of the same
 name on the board is removed, so the .mpy is the one imported.
@@ -25,6 +29,7 @@ import tempfile
 from io import BytesIO
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CODE = os.path.join(ROOT, "FM-1_Flasher_Code")  # what goes on CIRCUITPY, as the Project Bundle has it
 FM1_LIBS = ("fm1proto.py", "fm1update.py", "fm1usb.py", "fm1catalog.py", "fm1pic.py")
 # Keeps the computer from reading /sd over USB while the flasher uses it: two
 # users of one FAT file system get stale sectors (DEVNOTES §6.18).
@@ -124,20 +129,21 @@ def main():
     lib = os.path.join(args.drive, "lib")
     n = 0
     for name in FM1_LIBS:
-        compile_to(args.mpy_cross, os.path.join(ROOT, "lib", name), lib)
+        compile_to(args.mpy_cross, os.path.join(CODE, "lib", name), lib)
         n += 1
-    for src in sorted(glob.glob(os.path.join(ROOT, "lib", "fm1ui", "*.py"))):
+    for src in sorted(glob.glob(os.path.join(CODE, "lib", "fm1ui", "*.py"))):
         compile_to(args.mpy_cross, src, os.path.join(lib, "fm1ui"))
         n += 1
     fonts = os.path.join(args.drive, "fonts")
     os.makedirs(fonts, exist_ok=True)
-    for f in glob.glob(os.path.join(ROOT, "fonts", "*.fmf")):
+    for f in glob.glob(os.path.join(CODE, "fonts", "*.fmf")):
         dst = os.path.join(fonts, os.path.basename(f))
         if not (os.path.exists(dst) and open(dst, "rb").read() == open(f, "rb").read()):
             shutil.copy(f, fonts)
+    write_splash(CODE)  # the Project Bundle's copy
     write_splash(args.drive)
     update_settings(args.drive)
-    shutil.copy(os.path.join(ROOT, "device", "code.py"), os.path.join(args.drive, "code.py"))
+    shutil.copy(os.path.join(CODE, "code.py"), os.path.join(args.drive, "code.py"))
     os.sync()
     print("deployed %d modules, fonts, the splash, settings.toml and code.py to %s" % (n, args.drive))
 

@@ -8,7 +8,7 @@ tested on the Feather. Its last tested version is the tag
 `v1-feather-final` (03eb577, before #40). The Feather-only code was removed
 on 4 November 2026: its hardware in `fm1ui.device` (now it takes everything
 from `fm1ui.metro_p4`), the 480x320 layout and the layout switches only it
-used, the Feather and Pico REPL scripts in `device/`, its CircuitPython
+used, the Feather and Pico REPL scripts in `device/` (now `tools/device/`), its CircuitPython
 patches (`patches/` now holds the Metro build's two), and the Feather parts
 of `deploy.py`, `make_splash.py` and `ui_sim.py`. `fm1usb` clears the
 endpoints' data toggles on every board now. The Feather-era RAM workarounds
@@ -77,14 +77,14 @@ nothing). BOOT + Reset gives the ROM loader (no drive); TinyUF2 0.36.0's
 METROP4BOOT. This board's chip reports revision v0.1, which TinyUF2 and
 CircuitPython accept.
 
-- [x] Display and touch (`device/metro_spike_display.py`): `board.SPI()`
+- [x] Display and touch (`tools/device/metro_spike_display.py`): `board.SPI()`
       through the ICSP header with no jumpers (CS D10, DC D9, 40 MHz); a
       full-screen refresh takes 65 ms. Touch is an FT6206 (`adafruit_focaltouch`,
       0x38, chip ID 0x06) reporting portrait: screen x = 319 - raw y,
       screen y = raw x.
 - [x] USB host: **passes with a custom build** (`ref/cp-metro-p4`, branch
       `fm1-metro-p4`: upstream `main` + a 512-byte enumeration buffer + a
-      TinyUSB fix). From the REPL (`device/metro_install.py`, 64-byte writes),
+      TinyUSB fix). From the REPL (`tools/device/metro_install.py`, 64-byte writes),
       with no lost replies or resends:
 
       | Install | Metro ESP32-P4 | v1 (Feather) |
@@ -125,12 +125,12 @@ CircuitPython accept.
         several dozen reopens. Not explained.
       - Cutting the host port's 5 V doesn't make a battery-powered FM-1
         disconnect; a clean test needs a cable replug.
-- [x] SD card (`device/metro_spike_net.py`): the board doesn't mount it;
+- [x] SD card (`tools/device/metro_spike_net.py`): the board doesn't mount it;
       `sdioio.SDCard` (4-bit, 40 MHz) plus `storage.mount` does. 1 MB writes
       at 1.6-1.75 MB/s, reads at 6.9-7.7 MB/s. The full package checks on
       SLOOP (610 KB) take 2.3 s. Card detect (`board.SD_CD`) reads low with
       a card in.
-- [x] WiFi (`device/metro_spike_net.py`): `catalog.json` (148 firmwares,
+- [x] WiFi (`tools/device/metro_spike_net.py`): `catalog.json` (148 firmwares,
       290 KB) in 3.6 s; SLOOP 2.8.4 streamed to the card at 0.21 MB/s with a
       matching SHA-256 (a full card, ~90 MB, would take ~7 min); 15 MB free
       RAM. The hub's picture (480x480 full-colour PNG, 4 KB) takes 9.3 s to
@@ -208,7 +208,7 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       Settings > Scroll pages to turn it off. displayio draws the list's cards
       (shapes and text) at 10 fps whatever the SPI clock, so each page is
       drawn once into one bitmap (`fm1ui/flat.py`): 22 fps at 40 MHz, 29 fps
-      at 80 MHz, 17-24 fps while dragging (`device/metro_spike_scroll.py`).
+      at 80 MHz, 17-24 fps while dragging (`tools/device/metro_spike_scroll.py`).
       The display now runs at 80 MHz, clean on the shield. Metro only.
 
 ## Phase 3: Battery and release
@@ -228,6 +228,14 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       a header battery icon that turns red below ~3.5 V, and a
       confirmation before an install below ~3.4 V.
 - [ ] Soak tests across many firmwares, a Learn Guide section, a release.
+      Seen so far (4 November 2026): Duell (FM-1_901) twice stopped asking
+      for data at ~9% while staging Amenity's loader ("device stopped
+      requesting data"; nothing written, Duell still boots). The same install
+      then worked, as did Duell → SLOOP, → Clatter Pocket and → Amenity, each
+      right after Duell had been installed; both failures were on a Duell
+      that had been on the FM-1 a while. Staging an M-VAVE-loader package
+      (Amenity, Clatter, Bubba) from Duell takes ~8 s, not ~6. Watch for it;
+      a retry, a power cycle or going via V15 gets past it.
 
 ## To look into
 
@@ -246,6 +254,18 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       too (user report, 4 November 2026). OK reloads the code, and the touch
       came through to the new list; `fm1ui.app.Gestures` now also ignores a
       touch that's already down when it starts, until it lifts.
+
+## Moving to the Learn Guides repo
+
+- [ ] The project moves to `adafruit/Adafruit_Learning_System_Guides/FM-1_Flasher`
+      (4 November 2026), as `CircuitPython_Turbo` did: notes, tools, tests and
+      patches come along. `FM-1_Flasher_Code/` is the guide's Project Bundle,
+      laid out as CIRCUITPY. The Learn repo's checks pass (its SPDX script, and
+      pylint 2.7.1 on Python 3.10 with its `.pylintrc`; `.github/workflows/learn-checks.yml`
+      runs them here). `tools/` and `tests/` are marked `.circuitpython.skip`.
+      The PR also adds `LICENSES/GPL-3.0-only.txt` at the Learn repo's top
+      level. Then `jedgarpark/FM-1_Flasher` is archived with a pointer, so the
+      upstream links, the tags and the `firmware-20261102` release keep working.
 
 ## Upstream and the hub
 

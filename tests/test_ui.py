@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
 """Tests for the UI's data layer (fm1ui.catalog) and touch gestures.
 Plain CPython: python3 -m unittest discover tests"""
@@ -9,7 +11,7 @@ import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path[:0] = [os.path.join(ROOT, "lib"), os.path.join(ROOT, "tools")]
+sys.path[:0] = [os.path.join(ROOT, "FM-1_Flasher_Code", "lib"), os.path.join(ROOT, "tools")]
 
 from fm1ui import catalog as C  # noqa: E402
 

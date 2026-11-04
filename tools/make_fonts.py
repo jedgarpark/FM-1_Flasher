@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
 """Render TrueType fonts into the packed 1-bit fonts (.fmf) the device UI uses.
 
@@ -123,7 +125,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--inter", required=True)
     ap.add_argument("--mono", required=True)
-    ap.add_argument("--out", default="fonts")
+    ap.add_argument("--out", default="FM-1_Flasher_Code/fonts")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     for name, src, weight, size, extra in FONTS:

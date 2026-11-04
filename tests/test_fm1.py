@@ -1,5 +1,7 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
-"""CPython tests for lib/fm1proto.py and lib/fm1update.py.
+"""CPython tests for FM-1_Flasher_Code/lib/fm1proto.py and fm1update.py.
 
 Run from the repo root:  python3 -m unittest discover -s tests
 Package tests need the M-VAVE SDK clone in ref/fm1_open (see README).
@@ -16,7 +18,7 @@ import sys
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path[:0] = [os.path.join(ROOT, "lib"), os.path.join(ROOT, "tools")]
+sys.path[:0] = [os.path.join(ROOT, "FM-1_Flasher_Code", "lib"), os.path.join(ROOT, "tools")]
 
 import fm1proto as P  # noqa: E402
 import fm1update as U  # noqa: E402

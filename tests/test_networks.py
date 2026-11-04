@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 John Park for Adafruit Industries
+#
 # SPDX-License-Identifier: GPL-3.0-only
 """Tests for Settings > WiFi's saved networks (fm1ui.networks)."""
 
@@ -6,7 +8,7 @@ import sys
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path[:0] = [os.path.join(ROOT, "lib")]
+sys.path[:0] = [os.path.join(ROOT, "FM-1_Flasher_Code", "lib")]
 
 from fm1ui import networks as N  # noqa: E402
 
