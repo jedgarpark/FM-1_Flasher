@@ -311,25 +311,53 @@ def bank_write_payload(offset, chunk):
 
 
 COMMUNITY_LOADER = "ota-FM-1_9xx"
+_OTA = b"ota-FM-1_"
 
 
-def loader_identity(meta):
+def package_loader_identity(pkg):
+    """The identity a community package's own loader answers with, as its
+    loader entry spells it ("ota-FM-1_<digits>"), or None when it has none
+    or several. Most say ota-FM-1_900, but Skiff 2.2 says ota-FM-1_722 and
+    Matryoshka ota-FM-1_700. Read in chunks (the loader is up to 32 KB)."""
+    found = set()
+    tail = b""
+    for chunk in pkg.chunks(pkg.loader["offset"], pkg.loader["size"], 1024):
+        data = tail + bytes(chunk)
+        i = data.find(_OTA)
+        while i >= 0:
+            j = i + len(_OTA)
+            while j < len(data) and 48 <= data[j] <= 57:
+                j += 1
+            if j < len(data) and j > i + len(_OTA):  # digits, and the end of them is in view
+                found.add(data[i:j].decode())
+            i = data.find(_OTA, i + 1)
+        tail = data[-16:]  # a name split across chunks is found whole in the next
+    return found.pop() if len(found) == 1 else None
+
+
+def loader_identity(meta, pkg=None):
     if meta["loader_sha256"] == VENDOR_LOADER_SHA256:
         return "ota-FM-1_015"
     if meta.get("kind") == "stock":
         return "ota-" + meta["product"]
     if meta.get("kind") == "community":
-        # Felucca-derived loaders hard-code ota-FM-1_9<nn>.
-        return COMMUNITY_LOADER
+        # The package's own loader's name when it has one; else the rule
+        # Felucca-derived loaders follow, ota-FM-1_9<nn>.
+        return (pkg is not None and package_loader_identity(pkg)) or COMMUNITY_LOADER
     return "ota-FM1C_" + meta["build_id"][:16]
 
 
 def loader_matches(meta, ident):
+    """Is `ident` the loader this package's install waits for? A community
+    package's loader may answer as ota-FM-1_9<nn> (the Felucca rule, which
+    every one used until Skiff 2.2) or as its own loader spells itself."""
     want = meta["loader_identity"]
-    if want == COMMUNITY_LOADER:
+    if ident == want:
+        return True
+    if want == COMMUNITY_LOADER or (meta.get("kind") == "community" and want != "ota-FM-1_015"):
         return (len(ident) == 12 and ident.lower().startswith("ota-fm-1_9")
                 and ident[10:].isdigit())
-    return ident == want
+    return False
 
 
 # --- Packages ----------------------------------------------------------------
@@ -583,5 +611,5 @@ def prepare(meta, f, verify=True, checked=False):
         check_sha256(bank_sha256, FACTORY_SHA256, "invalid factory voice data (SHA-256)")
         del bank
     meta = dict(meta)
-    meta["loader_identity"] = loader_identity(meta)
+    meta["loader_identity"] = loader_identity(meta, pkg)
     return pkg, meta

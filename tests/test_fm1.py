@@ -196,14 +196,19 @@ class Packages(unittest.TestCase):
         pkg.inspect()
 
 
-def with_new_loader(data, product):
+def with_new_loader(data, product, loader_name=None):
     """A renamed package whose loader differs from the vendor's, with entry,
-    table, and header CRCs re-sealed: a stand-in for a Felucca-family package."""
+    table, and header CRCs re-sealed: a stand-in for a Felucca-family package.
+    loader_name is written into the loader, across a 1 KB boundary, as
+    Skiff 2.2's loader spells "ota-FM-1_722"."""
     pkg = P.Package(io.BytesIO(data))
     pkg.inspect()
     image = bytearray(pkg.read(0, pkg.image_len))
     ld = pkg.loader
     image[ld["offset"] + 100] ^= 0x55
+    if loader_name:
+        name = loader_name.encode() + b"\0"
+        image[ld["offset"] + 1018:ld["offset"] + 1018 + len(name)] = name
     count = len(pkg.entries)
     table = bytearray(image[64:64 + count * 80])
     for i in range(count):
@@ -223,8 +228,9 @@ def with_new_loader(data, product):
     return renamed(bytes(out), product)
 
 
-def community_fixture(product="FM-1_900", vendor_loader=False):
-    data = renamed(stock_bytes(), product) if vendor_loader else with_new_loader(stock_bytes(), product)
+def community_fixture(product="FM-1_900", vendor_loader=False, loader_name=None):
+    data = (renamed(stock_bytes(), product) if vendor_loader
+            else with_new_loader(stock_bytes(), product, loader_name))
     meta = {"schema": 1, "kind": "community", "product": product, "family": 7, "bytes": len(data),
             "sha256": hashlib.sha256(data).hexdigest(),
             "loader_sha256": P.Package(io.BytesIO(data)).inspect() and _loader_sha(data)}
@@ -387,6 +393,18 @@ class Install(unittest.TestCase):
         # 10 ms pacing per block is part of the hub's route.
         blocks = (pkg.flash["size"] + pkg.loader["size"]) // 512
         self.assertGreater(clock.t, blocks * 10)
+
+    def test_community_own_loader_name(self):
+        # Skiff 2.2's loader answers as ota-FM-1_722, not ota-FM-1_9<nn>.
+        pkg, meta = community_fixture("FM-1_722", loader_name="ota-FM-1_722")
+        self.assertEqual(meta["loader_identity"], "ota-FM-1_722")
+        self.assertTrue(P.loader_matches(meta, "ota-FM-1_722"))
+        self.assertTrue(P.loader_matches(meta, "ota-FM-1_900"))  # the Felucca rule still holds
+        self.assertFalse(P.loader_matches(meta, "ota-FM-1_015"))
+        clock = FakeClock()
+        dev = FakeFM1(pkg, clock, identity="FM-1_900", capability=False, loader_identity="ota-FM-1_722")
+        self.run_install(pkg, meta, dev, clock)
+        self.assertEqual(dev.identity, "FM-1_722")
 
     def test_community_vendor_loader(self):
         pkg, meta = community_fixture("FM-1_003", vendor_loader=True)
