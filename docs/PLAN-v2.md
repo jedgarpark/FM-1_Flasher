@@ -259,8 +259,10 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       Metro without the TinyUSB fix: installs are expected to fail (a
       timed-out read isn't cancelled), but a test settles it for the guide.
 - [ ] The TinyUSB DWC2 abort fix (`patches/tinyusb-dwc2-abort.diff`):
-      reported as hathach/tinyusb#4405, no replies yet. Until it's fixed
-      upstream and CircuitPython picks it up, the flasher needs the custom
-      build.
+      reported as hathach/tinyusb#4405, and proposed as hathach/tinyusb#4430
+      (4 November 2026, the same change rebased onto master; tested on the
+      Metro only on the version CircuitPython pins). Open, waiting for
+      review. Once it's merged, CircuitPython still has to update its pinned
+      TinyUSB; until then the flasher needs the custom build.
 - [ ] Tell the hub's maintainer that flashers will download from the hub
       directly, and ask about the pictures (PNG CORS/BMP/JPEG).
