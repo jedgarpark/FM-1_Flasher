@@ -683,6 +683,7 @@ class ScrollDetail(Scroller, S.DetailScreen):
         g.append(ui.outlined(*L.HEART_BTN, ui.PANEL, ui.LINE))
         self.heart = ui.heart_tile(e.slug in app.state.favorites, *L.HEART_AT)
         g.append(self.heart)
+        self.remove_button(g)
         self.bar_at = len(g)
         g.append(self.bar())
         self.group = g

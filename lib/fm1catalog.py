@@ -211,6 +211,23 @@ def clean_parts(root):
                 os.remove(d + "/" + name)
 
 
+def remove(root, slug):
+    """Delete firmware folder <root>/<slug>, because its owner asked to on the
+    device (nothing here removes a firmware on its own). meta.json goes
+    first: a power cut part way leaves a folder the list and updates ignore.
+    Then index.txt is rewritten without it."""
+    d = root + "/" + slug
+    try:
+        os.remove(d + "/meta.json")
+        for name in os.listdir(d):
+            p = d + "/" + name
+            if not is_dir(p):
+                os.remove(p)
+        os.rmdir(d)
+    finally:
+        write_index(root)
+
+
 def matches(root, e):
     """Is catalogue entry `e` already on the card, unchanged?"""
     d = root + "/" + e["id"]
