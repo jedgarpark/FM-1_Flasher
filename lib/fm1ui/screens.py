@@ -193,7 +193,7 @@ class ListScreen(Screen):
             self.footer.append((L.SETTINGS_BTN, "settings", gear))
         update = app.updater is not None and L.UPDATE_BTN
         if update:
-            btn = ui.Button("Update", *L.UPDATE_BTN, name=ui.SMALL)
+            btn = ui.Button("Catalog", *L.UPDATE_BTN, name=ui.SMALL)
             g.append(btn.group)
             self.footer.append((L.UPDATE_BTN, "update", btn.group))
         if L.PAGE_BETWEEN:  # between the last left button and the next arrow
@@ -442,7 +442,7 @@ class DetailScreen(Screen):
                 self.meta = {}
         m = self.meta
         author = m.get("author") or ""
-        desc = m.get("description") or ""
+        desc = C.plain(m.get("description") or "")
         size = m.get("bytes")
         info = "  ".join(s for s in (C.version_label(e.version), e.product,
                                      "%d KB" % (size // 1024) if size else "") if s)

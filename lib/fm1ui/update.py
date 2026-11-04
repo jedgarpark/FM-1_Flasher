@@ -456,12 +456,14 @@ class PlanScreen:
     """The plan's firmwares, from Details on the Update screen: the new ones
     first, then the updated ones with the version on the card and the new
     one. Each has a tick box (a tap anywhere on the line toggles it); unticked
-    ones aren't downloaded. The genre button (as on the list) shows one
-    genre at a time, and All and None tick or untick the lines it shows.
+    ones aren't downloaded. Info at a line's right end shows that firmware's
+    description (plan_info). The genre button (as on the list) shows
+    one genre at a time, and All and None tick or untick the lines it shows.
     done() runs on Back when the ticks changed."""
 
     ROW_H, PITCH, TOP = 24, 24, 40
     BOX = 14  # the tick box
+    INFO_W = 40  # the Info button
 
     def __init__(self, app, plan, done=None):
         from fm1ui.settings import _Paged
@@ -489,6 +491,7 @@ class PlanScreen:
                 counts[t] = counts.get(t, 0) + 1
             rows.append((e["id"], e.get("name") or e["id"], change, color, tags))
         self.rows = rows
+        self.by_id = dict((e["id"], e) for e in plan.offered)
         self.tags = [t for t, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
         self._paged = _Paged  # its page arrows, borrowed
 
@@ -521,6 +524,7 @@ class PlanScreen:
         per = self.per_page()
         skip, box = self.plan.skip, self.BOX
         self.shown = []  # (id, rect)
+        self.infos = []  # (id, its Info button)
         for i, (cid, label, change, color, _) in enumerate(C.page_slice(rows, self.page, per)):
             y = self.TOP + i * self.PITCH
             if i:
@@ -531,12 +535,17 @@ class PlanScreen:
             if on:
                 g.append(ui.rect(15, cy + 3, box - 6, box - 6, ui.CYAN))
             left = 12 + box + 8
-            room = W - left - 12
+            ix = W - 12 - self.INFO_W
+            info = ui.Button("Info", ix, y + 3, self.INFO_W, self.ROW_H - 4, name=ui.SMALL)
+            g.append(info.group)
+            right = ix - 8  # the change ends here
+            room = right - left
             change = C.ellipsize(change, lambda s: ui.width(ui.SMALL, s), room // 2)
             cw = ui.width(ui.SMALL, change)
             g.append(ui.text(ui.NAME, C.ellipsize(label, lambda s: ui.width(ui.NAME, s), room - cw - 10),
                              ui.FG if on else ui.DIM, left, y + self.ROW_H // 2, (0, 0.5)))
-            g.append(ui.text(ui.SMALL, change, color if on else ui.LINE, W - 12, y + self.ROW_H // 2, (1, 0.5)))
+            g.append(ui.text(ui.SMALL, change, color if on else ui.LINE, right, y + self.ROW_H // 2, (1, 0.5)))
+            self.infos.append((cid, info))
             self.shown.append((cid, (0, y, W, self.PITCH)))
         n = len(self.rows)
         parts = ["%d of %d ticked" % (n - len(skip), n)]
@@ -557,6 +566,15 @@ class PlanScreen:
         i = self.tags.index(self.tag) + 1 if self.tag in self.tags else 0
         return self.tags[i] if i < len(self.tags) else None
 
+    def _info_at(self, x, y):
+        """The Info button a tap is on: its width and a few px to its left,
+        the row's height (the rows are close together)."""
+        for cid, b in self.infos:
+            bx, by, bw, bh = b.rect
+            if bx - 6 <= x and by - 3 <= y < by + bh + 1:
+                return cid, b
+        return None, None
+
     def _row_at(self, x, y):
         for cid, (rx, ry, rw, rh) in self.shown:
             if rx <= x < rx + rw and ry <= y < ry + rh:
@@ -570,6 +588,9 @@ class PlanScreen:
         a = self._paged.arrow_at(self, x, y)
         if a:
             return self.prev_g if a < 0 else self.next_g
+        _, info = self._info_at(x, y)
+        if info is not None:
+            return info.group
         return None  # a line: its box changing is the feedback
 
     def _button_at(self, x, y):
@@ -605,6 +626,10 @@ class PlanScreen:
             if a:
                 self._paged.turn(self, a)
                 return
+            cid, info = self._info_at(x, y)
+            if info is not None:
+                self.app.push(plan_info(self.app, self.by_id[cid]))
+                return
             cid = self._row_at(x, y)
             if cid is not None:
                 skip = set(self.plan.skip)
@@ -625,3 +650,24 @@ class PlanScreen:
 
     def fm1_changed(self):
         pass
+
+
+
+
+def plan_info(app, e):
+    """One firmware from Update > Details, as the hub's catalogue describes
+    it (it may not be on the card yet): name, author, version, types and the
+    description, on a TextScreen (Back returns)."""
+    from fm1ui.settings import TextScreen
+    kind = e.get("kind")
+    tags = kind if isinstance(kind, list) else [kind] if kind else []
+    size = e.get("size")
+    info = "  ".join(s for s in (C.version_label(str(e.get("version") or "")), e.get("product"),
+                                 "%d KB" % (size // 1024) if size else "",
+                                 ", ".join(tags), "beta" if e.get("beta") else "") if s)
+    items = []
+    if e.get("author"):
+        items.append((ui.BODY, "by " + e["author"], ui.DIM))
+    items.append((ui.SMALL, info, ui.DIM))
+    items.append((ui.BODY, C.plain(e.get("what") or "No description."), ui.TEXT))
+    return TextScreen(app, e.get("name") or e["id"], items)

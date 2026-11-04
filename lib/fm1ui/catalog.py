@@ -238,6 +238,11 @@ class State:
         return found[0] if len(found) == 1 else None
 
 
+def plain(text):
+    """A hub description without its Markdown emphasis ("**word**")."""
+    return text.replace("**", "")
+
+
 def wrap(text, width_of, max_width):
     """Split text into lines no wider than max_width; width_of(s) measures a string."""
     lines = []
