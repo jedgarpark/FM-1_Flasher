@@ -228,6 +228,14 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       a header battery icon that turns red below ~3.5 V, and a
       confirmation before an install below ~3.4 V.
 - [ ] Soak tests across many firmwares, a Learn Guide section, a release.
+      Seen so far (4 November 2026): Duell (FM-1_901) twice stopped asking
+      for data at ~9% while staging Amenity's loader ("device stopped
+      requesting data"; nothing written, Duell still boots). The same install
+      then worked, as did Duell → SLOOP, → Clatter Pocket and → Amenity, each
+      right after Duell had been installed; both failures were on a Duell
+      that had been on the FM-1 a while. Staging an M-VAVE-loader package
+      (Amenity, Clatter, Bubba) from Duell takes ~8 s, not ~6. Watch for it;
+      a retry, a power cycle or going via V15 gets past it.
 
 ## To look into
 
