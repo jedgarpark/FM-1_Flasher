@@ -6,7 +6,7 @@ that has two changes. Both are against CircuitPython `main` at 2b8803867c
 
 | Patch | Applies in | What it does | Needed? |
 |---|---|---|---|
-| `cp11-metro-p4-enum-bufsize.diff` | CircuitPython root | `CFG_TUH_ENUMERATION_BUFSIZE=512` for the Metro ESP32-P4. The FM-1's configuration descriptor is 293 bytes and the default buffer is 288, so the stock build never mounts it. | **Yes** |
+| `cp11-metro-p4-enum-bufsize.diff` | CircuitPython root | `CFG_TUH_ENUMERATION_BUFSIZE=512` for the Metro ESP32-P4. The FM-1's configuration descriptor is 293 bytes and the default buffer is 288, so the stock build never mounts it. Proposed upstream as adafruit/circuitpython#11751. | **Yes** |
 | `tinyusb-dwc2-abort.diff` | `lib/tinyusb` | DWC2 host: retire an aborted non-periodic DMA channel when it halts. Without it, reads from the FM-1 time out after a transfer is aborted. Posted upstream as hathach/tinyusb#4405. | **Yes** |
 
 ## Building
