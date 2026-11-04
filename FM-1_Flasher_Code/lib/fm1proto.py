@@ -8,6 +8,9 @@ and CircuitPython: no dataclasses, typing, or re. Packages are streamed from
 a file object; only image[0:940] and small tables are held in RAM.
 """
 
+# Disabled for the Learn Guides lint check: some drawing and protocol functions are long by
+# nature.
+# pylint: disable=too-many-locals
 import binascii
 
 try:
@@ -330,7 +333,7 @@ def package_loader_identity(pkg):
             j = i + len(_OTA)
             while j < len(data) and 48 <= data[j] <= 57:
                 j += 1
-            if j < len(data) and j > i + len(_OTA):  # digits, and the end of them is in view
+            if i + len(_OTA) < j < len(data):  # digits, and the end of them is in view
                 found.add(data[i:j].decode())
             i = data.find(_OTA, i + 1)
         tail = data[-16:]  # a name split across chunks is found whole in the next
@@ -345,7 +348,9 @@ def loader_identity(meta, pkg=None):
     if meta.get("kind") == "community":
         # The package's own loader's name when it has one; else the rule
         # Felucca-derived loaders follow, ota-FM-1_9<nn>.
-        return (pkg is not None and package_loader_identity(pkg)) or COMMUNITY_LOADER
+        if pkg is not None:
+            return package_loader_identity(pkg) or COMMUNITY_LOADER
+        return COMMUNITY_LOADER
     return "ota-FM1C_" + meta["build_id"][:16]
 
 
@@ -404,6 +409,7 @@ class Package:
         self.product = product
         self.head = bytes(head)
         self.entries = None
+        self.flash = self.loader = None  # set by the entries' check
 
     def read_into(self, address, buf, n=None):
         """Fill buf[0:n] with image[address:address+n]."""
@@ -460,7 +466,7 @@ class Package:
                 "name": ascii_z(e[64:]),
             }
             off, size, stored, enc = ent["offset"], ent["size"], ent["stored"], ent["encrypted"]
-            check(off >= 64 + count * 80 and off <= self.image_len and size <= self.image_len - off,
+            check(64 + count * 80 <= off <= self.image_len and size <= self.image_len - off,
                   "entry out of bounds")
             fits = stored <= self.image_len - off
             if not fits and not strict:
@@ -474,12 +480,19 @@ class Package:
                 for chunk in self.chunks(off, size):
                     c = crc16(chunk, c)
                 check(c == ent["crc"], "entry CRC failed: " + ent["name"])
-            check(not enc or (ent["type"] != 0 and ent["type"] != 100), "flash or loader entry is encrypted")
+            check(
+                not enc or (ent["type"] != 0 and ent["type"] != 100),
+                "flash or loader entry is encrypted",
+            )
             entries.append(ent)
         flash = [e for e in entries if e["type"] == 0]
         loader = [e for e in entries if e["type"] == 100]
-        check(len(flash) == 1 and 16384 <= flash[0]["size"] <= 1044480 and flash[0]["size"] % 4096 == 0,
-              "invalid flash image")
+        check(
+            len(flash) == 1
+            and 16384 <= flash[0]["size"] <= 1044480
+            and flash[0]["size"] % 4096 == 0,
+            "invalid flash image",
+        )
         check(len(loader) == 1 and 0 < loader[0]["size"] < 32768, "missing or invalid loader")
         self.entries = entries
         self.flash = flash[0]
@@ -582,10 +595,19 @@ def prepare(meta, f, verify=True, checked=False):
         ok = kind in (None, "open") and open_identity(product)
     check(meta.get("schema") == 1 and ok and (community or is_hex64(meta.get("build_id"))),
           "invalid firmware metadata")
-    check(is_hex64(meta.get("sha256")) and is_hex64(meta.get("loader_sha256")), "invalid firmware metadata")
+    check(
+        is_hex64(meta.get("sha256")) and is_hex64(meta.get("loader_sha256")),
+        "invalid firmware metadata",
+    )
     if stock:
-        check(meta["sha256"] == STOCK_SHA256 and meta["build_id"] == meta["sha256"], "stock firmware check failed")
-    check(meta.get("family") == FAMILY and PKG_MIN <= meta.get("bytes", 0) <= PKG_MAX, "invalid firmware configuration")
+        check(
+            meta["sha256"] == STOCK_SHA256 and meta["build_id"] == meta["sha256"],
+            "stock firmware check failed",
+        )
+    check(
+        meta.get("family") == FAMILY and PKG_MIN <= meta.get("bytes", 0) <= PKG_MAX,
+        "invalid firmware configuration",
+    )
     pkg = Package(f)
     check(pkg.file_size == meta["bytes"], "package size does not match metadata")
     if verify:

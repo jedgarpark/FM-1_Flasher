@@ -7,6 +7,12 @@ Each screen builds its displayio group when shown and lets it go when another
 screen covers it, so only one screen's objects are in RAM. Screens get
 taps and swipes from the App and redraw by changing their objects in place.
 """
+# Disabled for the Learn Guides lint check: screens make their widgets in build(), each time
+# they're shown; modules are imported where they're needed, to keep RAM free and start-up quick;
+# methods kept on their class: the screen interface, or overridden; some drawing and protocol
+# functions are long by nature.
+# pylint: disable=attribute-defined-outside-init,import-outside-toplevel,no-self-use
+# pylint: disable=too-many-branches,too-many-locals,too-many-statements
 import json
 import time
 
@@ -73,7 +79,7 @@ class Screen:
     def tick(self, now):
         pass
 
-    def target(self, x, y):
+    def target(self, x, y):  # pylint: disable=unused-argument
         """The outlined group a touch at (x, y) would press, or None.
         Mirrors tap(): what lights up is what the tap will act on."""
         return None
@@ -110,7 +116,9 @@ class ListScreen(Screen):
     def items(self):
         """Index positions of the entries the filters show."""
         st = self.app.state
-        return self.app.index.select(st.favorites if self.favorites_only else None, self.tag, st.sort)
+        return self.app.index.select(
+            st.favorites if self.favorites_only else None, self.tag, st.sort
+        )
 
     def per_page(self):
         return 2 * L.LIST_ROWS if self.app.state.view == "list" else L.COLS * L.ROWS
@@ -141,7 +149,9 @@ class ListScreen(Screen):
         g.append(self.tab_tag.group)
         fx, fy = L.FAV_TAB[0], L.FAV_TAB[1]
         on = self.favorites_only
-        self.tab_fav_g = ui.outlined(*L.FAV_TAB, ui.PANEL if on else ui.BG, ui.CYAN if on else ui.LINE)
+        self.tab_fav_g = ui.outlined(
+            *L.FAV_TAB, ui.PANEL if on else ui.BG, ui.CYAN if on else ui.LINE
+        )
         g.append(self.tab_fav_g)
         g.append(ui.heart_tile(True, fx + (L.FAV_TAB[2] - 13) // 2, fy + 7))
         self.tab_sort = ui.Button(C.SORT_LABELS.get(app.state.sort, "A-Z"), *L.SORT_BTN)
@@ -165,7 +175,9 @@ class ListScreen(Screen):
         for i, e in enumerate(shown):
             if as_list:
                 x = L.GRID_X + (i // L.LIST_ROWS) * (L.ROW_W + L.GAP)
-                g.append(self.row(e, x, L.GRID_Y + (i % L.LIST_ROWS) * L.ROW_PITCH, e.slug == installed))
+                g.append(
+                    self.row(e, x, L.GRID_Y + (i % L.LIST_ROWS) * L.ROW_PITCH, e.slug == installed)
+                )
             else:
                 x = L.GRID_X + (i % L.COLS) * (L.CARD_W + L.GAP)
                 y = L.GRID_Y + (i // L.COLS) * (L.CARD_H + L.GAP)
@@ -180,7 +192,11 @@ class ListScreen(Screen):
             box = ui.outlined(bx, by, bw, bh, ui.PANEL if active else ui.BG, ui.LINE)
             self.arrows.append(box if active else None)
             g.append(box)
-            g.append(ui.triangle(bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left))
+            g.append(
+                ui.triangle(
+                    bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left
+                )
+            )
         self.view_g = self.view_toggle(as_list)
         g.append(self.view_g)
         # The footer's buttons, left to right, as (rect, name, group or None).
@@ -220,7 +236,9 @@ class ListScreen(Screen):
         elif app.connecting:
             g.append(ui.text(ui.SMALL, "Connecting...", ui.DIM, right, y, (1, 0.5)))
         else:
-            self.connect_btn = ui.Button("Connect FM-1", *L.CONNECT_BTN, edge=ui.WARN if app.connect_failed else ui.CYAN)
+            self.connect_btn = ui.Button(
+                "Connect FM-1", *L.CONNECT_BTN, edge=ui.WARN if app.connect_failed else ui.CYAN
+            )
             g.append(self.connect_btn.group)
         return g
 
@@ -236,14 +254,18 @@ class ListScreen(Screen):
         if installed:
             bx, bw = x + 4, cw - 8  # across the card, not just the picture
             g.append(ui.rect(bx, ty + thumb - 12, bw, 12, ui.CYAN))
-            g.append(ui.text(ui.SMALL, "INSTALLED", ui.BG, bx + bw // 2, ty + thumb - 6, (0.5, 0.5)))
+            g.append(
+                ui.text(ui.SMALL, "INSTALLED", ui.BG, bx + bw // 2, ty + thumb - 6, (0.5, 0.5))
+            )
         fav = e.slug in self.app.state.favorites
         tile = ui.heart_tile(fav, x + cw - 15, y + 10)
         g.append(tile)
         name = C.ellipsize(e.name, lambda s: ui.width(ui.NAME, s), cw - 8)
         g.append(ui.text(ui.NAME, name, ui.FG, x + cw // 2, y + L.CARD_NAME_Y, (0.5, 0)))
         vy = y + L.CARD_VERSION_Y
-        version = C.ellipsize(e.version, lambda s: ui.width(ui.SMALL, s), cw - (50 if e.beta else 8))
+        version = C.ellipsize(
+            e.version, lambda s: ui.width(ui.SMALL, s), cw - (50 if e.beta else 8)
+        )
         if e.beta:
             vw, bw = ui.width(ui.SMALL, version + " "), ui.width(ui.SMALL, "beta")
             left = x + (cw - vw - bw) // 2
@@ -260,7 +282,9 @@ class ListScreen(Screen):
         g = ui.outlined(x, y, rw, rh, ui.PANEL, ui.CYAN if installed else ui.LINE)
         g.append(ui.rect(x + 5, y + 6, 3, rh - 12, ui.kind_color(e.kind)))
         name = C.ellipsize(e.name, lambda s: ui.width(ui.NAME, s), rw - 50)
-        g.append(ui.text(ui.NAME, name, ui.CYAN if installed else ui.FG, x + 16, y + rh // 2, (0, 0.5)))
+        g.append(
+            ui.text(ui.NAME, name, ui.CYAN if installed else ui.FG, x + 16, y + rh // 2, (0, 0.5))
+        )
         fav = e.slug in self.app.state.favorites
         tile = ui.heart_tile(fav, x + rw - 22, y + L.ROW_HEART_DY)
         g.append(tile)
@@ -278,7 +302,9 @@ class ListScreen(Screen):
                 g.append(ui.rect(x + (w - 20) // 2, y + dy + i * 5, 20, 2, ui.CYAN))
         else:
             for i in range(6):  # a 3x2 grid of small squares
-                g.append(ui.rect(x + (w - 22) // 2 + (i % 3) * 8, y + dy + (i // 3) * 7, 6, 5, ui.CYAN))
+                g.append(
+                    ui.rect(x + (w - 22) // 2 + (i % 3) * 8, y + dy + (i // 3) * 7, 6, 5, ui.CYAN)
+                )
         return g
 
     def set_view(self, view):
@@ -343,10 +369,14 @@ class ListScreen(Screen):
             return self.connect_btn.group if self.connect_btn else None
         if zone == "tabs":
             tab = self._tab_at(x)
-            return self.tab_tag.group if tab == "tag" else self.tab_fav_g if tab == "fav" else self.tab_sort.group
+            return (
+                self.tab_tag.group
+                if tab == "tag"
+                else self.tab_fav_g if tab == "fav" else self.tab_sort.group
+            )
         if zone is not None:  # a footer button; None for an arrow with no page that way
             return self._footer_at(x)[2]
-        for e, card, heart, tile, g in self.cards:
+        for _e, card, heart, _tile, g in self.cards:
             if _hit(heart, x, y):
                 return None  # the heart's own toggle is the feedback
             if _hit(card, x, y):
@@ -462,7 +492,9 @@ class DetailScreen(Screen):
             line = C.wrap(rest, width_of, W - left - 12)[0]
             rest = rest[len(line):].lstrip(" ")
             if rest and y + 34 > bottom:  # last line that fits
-                line = C.ellipsize(line + " " + rest, width_of, W - left - 12 if left == x0 else L.DESC_LAST_W)
+                line = C.ellipsize(
+                    line + " " + rest, width_of, W - left - 12 if left == x0 else L.DESC_LAST_W
+                )
                 rest = ""
             lines.append(ui.text(ui.BODY, line, ui.TEXT, left, y, (0, 0)))
             y += 18
@@ -489,8 +521,16 @@ class DetailScreen(Screen):
         g.append(ui.text(tf, name, ui.FG, x0, top, (0, 0)))
         y = top + 28
         if author:
-            g.append(ui.text(ui.BODY, C.ellipsize("by " + author, lambda s: ui.width(ui.BODY, s), W - x0 - 12),
-                             ui.DIM, x0, y, (0, 0)))
+            g.append(
+                ui.text(
+                    ui.BODY,
+                    C.ellipsize("by " + author, lambda s: ui.width(ui.BODY, s), W - x0 - 12),
+                    ui.DIM,
+                    x0,
+                    y,
+                    (0, 0),
+                )
+            )
             y += 22
         g.append(ui.text(ui.SMALL, info, ui.DIM, x0, y, (0, 0)))
         y += 20
@@ -508,7 +548,7 @@ class DetailScreen(Screen):
             g.append(line)
 
         self.bar_at = len(g)
-        g.append(self.bar())
+        g.append(self.bottom_bar())
         self.group = g
         return g
 
@@ -527,10 +567,12 @@ class DetailScreen(Screen):
     def back_button(self):
         """Back, outlined in cyan when this firmware is the one on the FM-1
         (after an install it's the way on, not Install again)."""
-        self.back = ui.Button("Back", *L.BACK_BTN, edge=ui.CYAN if self.installed_here() else ui.LINE)
+        self.back = ui.Button(
+            "Back", *L.BACK_BTN, edge=ui.CYAN if self.installed_here() else ui.LINE
+        )
         return self.back
 
-    def bar(self):
+    def bottom_bar(self):
         """The bottom line: what's connected, and Install or Connect FM-1.
         Install again, for the firmware the FM-1 runs, is a plain button."""
         app = self.app
@@ -538,19 +580,29 @@ class DetailScreen(Screen):
         installed = self.installed_here()
         if app.identity:
             label, ready = ("Install again" if installed else "Install"), True
-            note, color = ("Installed on this FM-1", ui.CYAN) if installed else (fm1_status(app), ui.DIM)
+            note, color = (
+                ("Installed on this FM-1", ui.CYAN) if installed else (fm1_status(app), ui.DIM)
+            )
         elif app.connecting:
             label, ready = "Connect FM-1", False
             note, color = "Connecting...", ui.DIM
         else:
             label, ready = "Connect FM-1", True
-            note, color = (("No FM-1 answered. Is it on and plugged in?", ui.WARN) if app.connect_failed
-                           else ("Connect the FM-1 to install.", ui.DIM))
+            note, color = (
+                ("No FM-1 answered. Is it on and plugged in?", ui.WARN)
+                if app.connect_failed
+                else ("Connect the FM-1 to install.", ui.DIM)
+            )
         if installed:
             self.install = ui.Button(label, *L.INSTALL_BTN)
         else:
-            self.install = ui.Button(label, *L.INSTALL_BTN, fill=ui.CYAN if ready else ui.BG,
-                                     edge=ui.CYAN if ready else ui.LINE, color=ui.BG if ready else ui.LINE)
+            self.install = ui.Button(
+                label,
+                *L.INSTALL_BTN,
+                fill=ui.CYAN if ready else ui.BG,
+                edge=ui.CYAN if ready else ui.LINE,
+                color=ui.BG if ready else ui.LINE
+            )
         g.append(self.install.group)
         nx, ny = L.NOTE_AT
         g.append(wrapped(ui.SMALL, note, color, nx, ny - 7, L.NOTE_W, (0, 0.5), pitch=14))
@@ -583,7 +635,7 @@ class DetailScreen(Screen):
 
     def fm1_changed(self):
         self.group[self.back_at] = self.back_button().group
-        self.group[self.bar_at] = self.bar()
+        self.group[self.bar_at] = self.bottom_bar()
         self.app.refresh()
 
     def swipe(self, dx):
@@ -634,7 +686,16 @@ class ConfirmScreen(Screen):
         g.append(ui.rect(px + 4, py + 2, pw - 8, 3, ui.kind_color(e.kind)))
         tf = ui.title_font(title)
         tx, ty = L.CONFIRM_TITLE_AT
-        g.append(ui.text(tf, C.ellipsize(title, lambda s: ui.width(tf, s), L.CONFIRM_W), ui.FG, tx, ty, (0, 0)))
+        g.append(
+            ui.text(
+                tf,
+                C.ellipsize(title, lambda s: ui.width(tf, s), L.CONFIRM_W),
+                ui.FG,
+                tx,
+                ty,
+                (0, 0),
+            )
+        )
         y = L.CONFIRM_TEXT_Y
         for line in C.wrap(msg, width_of, L.CONFIRM_W)[:L.CONFIRM_LINES]:
             g.append(ui.text(ui.BODY, line, ui.TEXT, tx, y, (0, 0)))
@@ -695,7 +756,16 @@ class RemoveScreen(Screen):
         g.append(ui.rect(px + 4, py + 2, pw - 8, 3, ui.WARN))
         tf = ui.title_font(title)
         tx, ty = L.CONFIRM_TITLE_AT
-        g.append(ui.text(tf, C.ellipsize(title, lambda s: ui.width(tf, s), L.CONFIRM_W), ui.FG, tx, ty, (0, 0)))
+        g.append(
+            ui.text(
+                tf,
+                C.ellipsize(title, lambda s: ui.width(tf, s), L.CONFIRM_W),
+                ui.FG,
+                tx,
+                ty,
+                (0, 0),
+            )
+        )
         y = L.CONFIRM_TEXT_Y
         for line in C.wrap(msg, width_of, L.CONFIRM_W)[:L.CONFIRM_LINES]:
             g.append(ui.text(ui.BODY, line, color, tx, y, (0, 0)))
@@ -766,7 +836,9 @@ class ProgressScreen(Screen):
         self.title = ui.text(tf, self._fit(tf, "Installing %s" % e.name, L.PROGRESS_TITLE_W),
                              ui.FG, W // 2, L.PROGRESS_TITLE_Y, (0.5, 0))
         g.append(self.title)
-        self.sub = ui.text(ui.BODY, "Keep the FM-1 on and connected.", ui.DIM, W // 2, L.PROGRESS_SUB_Y, (0.5, 0))
+        self.sub = ui.text(
+            ui.BODY, "Keep the FM-1 on and connected.", ui.DIM, W // 2, L.PROGRESS_SUB_Y, (0.5, 0)
+        )
         g.append(self.sub)
         bx, by, bw, bh = L.BAR
         self.phase_label = ui.text(ui.NAME, "Preparing", ui.FG, bx, by - 10, (0, 1))
@@ -807,7 +879,7 @@ class ProgressScreen(Screen):
             label.set(part)
 
     def _bar(self, pct, color=None):
-        bx, by, bw, bh = L.BAR
+        bw = L.BAR[2]
         w = max(1, (bw - 6) * pct // 100)
         self.fill.width = w
         if color is not None:
@@ -828,7 +900,7 @@ class ProgressScreen(Screen):
         self._bar(pct)
         self.redraw()
 
-    def wait(self, what, note="Waiting for the FM-1 to restart..."):
+    def wait(self, _what, note="Waiting for the FM-1 to restart..."):
         """The installer is waiting for the FM-1 to come back."""
         self.waiting_since = time.monotonic()
         self._note(note, ui.WARN)

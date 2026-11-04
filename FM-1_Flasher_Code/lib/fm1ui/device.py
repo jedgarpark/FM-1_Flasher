@@ -12,6 +12,10 @@ An install runs in place, from the confirm screen, on a transport opened for
 it. (The Feather reloaded first, to install on an unfragmented heap, DEVNOTES
 §6.7; the Metro's 16 MB doesn't need that.)
 """
+# Disabled for the Learn Guides lint check: modules are imported where they're needed, to keep RAM
+# free and start-up quick; methods kept on their class: the screen interface, or overridden; some
+# drawing and protocol functions are long by nature.
+# pylint: disable=import-outside-toplevel,no-self-use,too-many-locals,too-many-statements
 import json
 import time
 
@@ -20,8 +24,9 @@ import usb.core
 
 import fm1usb
 from fm1ui import catalog as C
-from fm1ui.metro_p4 import (W, H, TOUCH_CAL, SPLASH, SPLASH_HOLD, display_setup, splash,  # noqa: F401
-                            display_redo, host_setup, mount_sd, Touch, Network)
+# The board's hardware, re-exported for code.py (D.display_setup() and so on).
+from fm1ui.metro_p4 import (  # pylint: disable=unused-import  # noqa: F401
+    display_setup, splash, display_redo, host_setup, mount_sd, Touch, Network)
 
 # fm1proto and fm1update (the installer) are imported only by run(). The
 # list screen's FM-1 probe below needs just the identity query.
@@ -198,8 +203,15 @@ class DeviceState(C.State):
     def save(self):
         if super().save():
             return True
-        data = json.dumps({"favorites": sorted(self.favorites), "installed": self.installed, "view": self.view,
-                           "sort": self.sort, "scroll": self.scroll})
+        data = json.dumps(
+            {
+                "favorites": sorted(self.favorites),
+                "installed": self.installed,
+                "view": self.view,
+                "sort": self.sort,
+                "scroll": self.scroll,
+            }
+        )
         return _nvm_write(self.NVM_STATE, 512, data.encode())
 
 
@@ -322,7 +334,7 @@ def run(app, entry):
         print("install: done in %.1f s" % (time.monotonic() - t0))
         screen.finish(True, "The FM-1 restarted with %s." % entry.name)
         return True
-    except Exception as e:  # FM1Error, USBError, OSError
+    except Exception as e:  # pylint: disable=broad-except  # FM1Error, USBError, OSError
         print("install: failed after %.1f s:" % (time.monotonic() - t0), repr(e))
         screen.finish(False, str(e) or repr(e))
         return False

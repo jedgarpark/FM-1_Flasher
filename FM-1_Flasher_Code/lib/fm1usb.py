@@ -216,7 +216,7 @@ def finder(log=None, chunk=None, gap_ms=0):
         found = []
         for dev in usb.core.find(find_all=True):
             # Opening can fail once right after attach; try each device twice.
-            for attempt in range(2):
+            for _ in range(2):
                 try:
                     ep = midi_endpoints(dev)
                     if ep:

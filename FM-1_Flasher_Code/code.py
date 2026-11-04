@@ -8,11 +8,16 @@ libraries, fonts/ and the splash; the bundle libraries it needs are listed there
 Firmware comes from /sd/firmware (Catalog over WiFi, or tools/make_sd.py), or
 /firmware on CIRCUITPY. A card without firmware starts in Catalog.
 """
+# Disabled for the Learn Guides lint check: the console note is printed before the slow imports.
+# pylint: disable=ungrouped-imports,wrong-import-position
 import gc
 
 # First, before the slow imports: what shows on the panel's console after a
 # reload (a start shows the splash instead).
-print("\x1b[2J\nFM-1 Flasher\n\nLoading the firmware list...\n\nThe touchscreen comes back\nin a few seconds.\n")
+print(
+    "\x1b[2J\nFM-1 Flasher\n\nLoading the firmware list...\n\n"
+    "The touchscreen comes back\nin a few seconds.\n"
+)
 
 from fm1ui import device as D  # noqa: E402
 from fm1ui import ui  # noqa: E402

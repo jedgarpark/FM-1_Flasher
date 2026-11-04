@@ -44,7 +44,8 @@ class Entry:
 class Index:
     """The firmware list, left on the card: only where each line starts is
     kept in RAM (parsed entries would cost ~20 KB, the lines themselves
-    ~6 KB; it was made for the Feather's RAM), and Entry objects are made only for the cards on screen."""
+    ~6 KB; it was made for the Feather's RAM), and Entry objects are made
+    only for the cards on screen."""
 
     def __init__(self, path):
         self.path = path
@@ -75,7 +76,16 @@ class Index:
             f.seek(self.starts[i])
             fields = f.readline().rstrip(b"\r\n").decode().split("\t")
         fields += [""] * (8 - len(fields))
-        return Entry(fields[0], fields[1], fields[2], fields[3], fields[4] == "1", fields[5], fields[6], fields[7])
+        return Entry(
+            fields[0],
+            fields[1],
+            fields[2],
+            fields[3],
+            fields[4] == "1",
+            fields[5],
+            fields[6],
+            fields[7],
+        )
 
     def slug(self, i):
         return self.entry(i).slug
@@ -98,8 +108,12 @@ class Index:
         out = []
         for i, line in self._lines():
             fields = line.split("\t")
-            if (slugs is None or fields[0] in slugs) and (tag is None or tag in fields[3].split(",")):
-                out.append(i if col is None else (-day(fields[col] if len(fields) > col else ""), i))
+            if (slugs is None or fields[0] in slugs) and (
+                tag is None or tag in fields[3].split(",")
+            ):
+                out.append(
+                    i if col is None else (-day(fields[col] if len(fields) > col else ""), i)
+                )
         if col is not None:
             out.sort()  # (newest first, then file order: by name)
             out = [i for _, i in out]

@@ -61,7 +61,7 @@ class Saved:
 def candidates(saved, toml):
     """Networks to try, in order: the saved ones, then settings.toml's
     (ssid, password) unless it's saved too. Each is (ssid, password)."""
-    out = [(s, p) for s, p in saved.items]
+    out = [tuple(item) for item in saved.items]  # (ssid, password)
     if toml and toml[0] and toml[0] not in saved.ssids():
         out.append(toml)
     return out

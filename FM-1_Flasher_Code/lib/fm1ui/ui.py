@@ -3,6 +3,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Look and drawing helpers: the Firmware Hub's colours, fonts, panels, text,
 buttons and icons, as plain displayio objects (CircuitPython or Blinka)."""
+# Disabled for the Learn Guides lint check: modules are imported where they're needed, to keep RAM
+# free and start-up quick; some drawing and protocol functions are long by nature.
+# pylint: disable=import-outside-toplevel,too-many-locals
 import bitmaptools
 import displayio
 import vectorio
@@ -136,8 +139,8 @@ def title_font(s):
     return TITLE
 
 
-def width(name, text):
-    return font(name).width(text)
+def width(name, s):
+    return font(name).width(s)
 
 
 def palette(color):
@@ -167,7 +170,16 @@ def rect(x, y, w, h, color):
 
 def panel(x, y, w, h, color, cut=4):
     """A rectangle with chamfered corners, the hub's rounded cards at this size."""
-    pts = [(cut, 0), (w - cut, 0), (w, cut), (w, h - cut), (w - cut, h), (cut, h), (0, h - cut), (0, cut)]
+    pts = [
+        (cut, 0),
+        (w - cut, 0),
+        (w, cut),
+        (w, h - cut),
+        (w - cut, h),
+        (cut, h),
+        (0, h - cut),
+        (0, cut),
+    ]
     return vectorio.Polygon(pixel_shader=palette(color), points=pts, x=x, y=y)
 
 
@@ -352,11 +364,15 @@ def load_tiles(path, bitmaps):
         head = f.read(54)
         if head[:2] != b"BM":
             raise ValueError("not a BMP")
-        u32 = lambda o: head[o] | (head[o + 1] << 8) | (head[o + 2] << 16) | (head[o + 3] << 24)  # noqa: E731
+        u32 = (
+            lambda o: head[o] | (head[o + 1] << 8) | (head[o + 2] << 16) | (head[o + 3] << 24)
+        )  # noqa: E731
         offset, size, w, h = u32(10), u32(14), u32(18), u32(22)
         bpp, compression, colours = head[28], u32(30), u32(46) or 256
         if bpp != 8 or compression or colours > 16 or w != TILE or h != TILE * len(bitmaps):
-            raise ValueError("needs an 8-bit BMP of %d %dx%d tiles, 16 colours" % (len(bitmaps), TILE, TILE))
+            raise ValueError(
+                "needs an 8-bit BMP of %d %dx%d tiles, 16 colours" % (len(bitmaps), TILE, TILE)
+            )
         f.seek(14 + size)
         pal_bytes = f.read(4 * colours)
         pal = displayio.Palette(colours)
@@ -397,12 +413,25 @@ def thumbnail(path, x, y, size, placeholder, first_slot=0):
         pal = load_tiles(path, tiles)
         g = displayio.Group()
         for i, bmp in enumerate(tiles):
-            g.append(displayio.TileGrid(bmp, pixel_shader=pal, x=x + (i % n) * TILE, y=y + (i // n) * TILE))
+            g.append(
+                displayio.TileGrid(
+                    bmp, pixel_shader=pal, x=x + (i % n) * TILE, y=y + (i // n) * TILE
+                )
+            )
         return g
     except (OSError, ValueError) as e:
         if getattr(e, "errno", None) != 2:  # a missing picture is normal (stock)
             print("no picture:", path, repr(e))
         g = displayio.Group()
         g.append(rect(x, y, size, size, THUMB_BG))
-        g.append(text(TITLE if size > 100 else NAME, placeholder, BEIGE, x + size // 2, y + size // 2, (0.5, 0.5)))
+        g.append(
+            text(
+                TITLE if size > 100 else NAME,
+                placeholder,
+                BEIGE,
+                x + size // 2,
+                y + size // 2,
+                (0.5, 0.5),
+            )
+        )
         return g

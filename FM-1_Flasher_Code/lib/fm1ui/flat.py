@@ -13,6 +13,12 @@ else (header, footer, filters, taps) is ListScreen's. It keeps the current
 page and its neighbours across rebuilds, and draws a missing neighbour a card
 at a time between touches.
 """
+# Disabled for the Learn Guides lint check: screens make their widgets in build(), each time
+# they're shown; modules are imported where they're needed, to keep RAM free and start-up quick;
+# methods kept on their class: the screen interface, or overridden; fm1ui's modules share a few
+# internal helpers; some drawing and protocol functions are long by nature.
+# pylint: disable=attribute-defined-outside-init,import-outside-toplevel,no-self-use
+# pylint: disable=protected-access,too-many-locals
 import time
 
 import bitmaptools
@@ -119,8 +125,17 @@ class Canvas:
                 gx = x0 + pen + left
                 sx = t[o + 2] | (t[o + 3] << 8)
                 if 0 <= gx and gx + gw <= self.bmp.width:
-                    bitmaptools.blit(self.bmp, sheet, gx, y0 + sy1, x1=sx, y1=sy1, x2=sx + gw, y2=sy2,
-                                     skip_source_index=0)
+                    bitmaptools.blit(
+                        self.bmp,
+                        sheet,
+                        gx,
+                        y0 + sy1,
+                        x1=sx,
+                        y1=sy1,
+                        x2=sx + gw,
+                        y2=sy2,
+                        skip_source_index=0,
+                    )
             pen += t[o + 6]
 
     def heart(self, filled, x, y, under=ui.PANEL):
@@ -194,7 +209,9 @@ class Page:
     def grid(self):
         """The page's TileGrid (one per page, made when first needed)."""
         if self.tile is None:
-            self.tile = displayio.TileGrid(self.canvas.bmp, pixel_shader=self.canvas.pal, y=L.GRID_Y)
+            self.tile = displayio.TileGrid(
+                self.canvas.bmp, pixel_shader=self.canvas.pal, y=L.GRID_Y
+            )
         return self.tile
 
     def steps(self):
@@ -228,7 +245,9 @@ class Page:
         name = C.ellipsize(e.name, lambda s: ui.width(ui.NAME, s), cw - 8)
         cv.text(ui.NAME, name, ui.FG, x + cw // 2, y + L.CARD_NAME_Y, (0.5, 0))
         vy = y + L.CARD_VERSION_Y
-        version = C.ellipsize(e.version, lambda s: ui.width(ui.SMALL, s), cw - (50 if e.beta else 8))
+        version = C.ellipsize(
+            e.version, lambda s: ui.width(ui.SMALL, s), cw - (50 if e.beta else 8)
+        )
         if e.beta:
             vw, bw = ui.width(ui.SMALL, version + " "), ui.width(ui.SMALL, "beta")
             left = x + (cw - vw - bw) // 2
@@ -277,9 +296,8 @@ class Highlight(displayio.Group):
 
     def press(self):
         self.hidden = False
-        return None
 
-    def release(self, old):
+    def release(self, _old):
         self.hidden = True
 
 
@@ -487,8 +505,9 @@ class ScrollList(Scroller, S.ListScreen):
 
     def tap(self, x, y):
         if self._zone(x, y) is not None or not getattr(self, "_items", None):
-            return super().tap(x, y)
-        e, heart, card = self._hit_card(x, y)
+            super().tap(x, y)
+            return
+        e, heart, _ = self._hit_card(x, y)
         if heart is not None:
             on = self.app.state.toggle_favorite(e.slug)
             if self.favorites_only:
@@ -533,7 +552,9 @@ class DetailPage:
 
     def grid(self):
         if self.tile is None:
-            self.tile = displayio.TileGrid(self.canvas.bmp, pixel_shader=self.canvas.pal, y=self.canvas.top)
+            self.tile = displayio.TileGrid(
+                self.canvas.bmp, pixel_shader=self.canvas.pal, y=self.canvas.top
+            )
         return self.tile
 
     def max_scroll(self):
@@ -593,8 +614,14 @@ class DetailPage:
         cv.text(tf, name, ui.FG, x0, top, (0, 0))
         y = top + 28
         if author:
-            cv.text(ui.BODY, C.ellipsize("by " + author, lambda s: ui.width(ui.BODY, s), W - x0 - 12),
-                    ui.DIM, x0, y, (0, 0))
+            cv.text(
+                ui.BODY,
+                C.ellipsize("by " + author, lambda s: ui.width(ui.BODY, s), W - x0 - 12),
+                ui.DIM,
+                x0,
+                y,
+                (0, 0),
+            )
             y += 22
         cv.text(ui.SMALL, info, ui.DIM, x0, y, (0, 0))
         y += 20
@@ -674,7 +701,9 @@ class ScrollDetail(Scroller, S.DetailScreen):
         if cur.max_scroll():
             self.bar_g = displayio.Group()
             self.bar_g.append(ui.rect(W - 4, top + 2, 2, band - 4, ui.LINE))
-            self.thumb = ui.rect(W - 4, top + 2, 2, max(12, (band - 4) * band // (band + cur.max_scroll())), ui.DIM)
+            self.thumb = ui.rect(
+                W - 4, top + 2, 2, max(12, (band - 4) * band // (band + cur.max_scroll())), ui.DIM
+            )
             self.bar_g.append(self.thumb)
             g.append(self.bar_g)
             self._place_thumb()
@@ -687,7 +716,7 @@ class ScrollDetail(Scroller, S.DetailScreen):
         g.append(self.heart)
         self.remove_button(g)
         self.bar_at = len(g)
-        g.append(self.bar())
+        g.append(self.bottom_bar())
         self.group = g
         return g
 
@@ -711,7 +740,7 @@ class ScrollDetail(Scroller, S.DetailScreen):
                 self.bar_g.hidden = True
         Scroller.drag(self, dx, x0, y0)
 
-    def vdrag(self, dy, x0, y0):
+    def vdrag(self, dy, _x0, _y0):
         p = self._page(self.page)
         most = p.max_scroll()
         if not most:

@@ -12,6 +12,12 @@ A finder is a callable returning a list of open candidate transports; it is
 called again after each re-enumeration.
 """
 
+# Disabled for the Learn Guides lint check: modules are imported where they're needed, to keep RAM
+# free and start-up quick; methods kept on their class: the screen interface, or overridden;
+# self.trace is called only after checking it's set; some drawing and protocol functions are long
+# by nature.
+# pylint: disable=import-outside-toplevel,no-self-use,not-callable,too-many-branches,too-many-locals
+# pylint: disable=too-many-return-statements,too-many-statements
 import time
 
 import fm1proto as P
@@ -168,7 +174,9 @@ class Updater:
         check(device is not None, "no FM-1 answered; power it on and reconnect USB")
         self.link, self.identity = device
         ident = self.identity
-        self.hub_timing = self.community or (P.community_identity(ident) and ident != P.STOCK_PRODUCT)
+        self.hub_timing = self.community or (
+            P.community_identity(ident) and ident != P.STOCK_PRODUCT
+        )
         try:
             if self.community:
                 return self._connect_community(ident, force)
@@ -310,7 +318,7 @@ class Updater:
                     self.trace("resend", address, n, self.slow_level if slowed else None)
             prev = p
             check(0 < n <= 512, "invalid request length")
-            if address == P.FINISH_STAGE1 or address == P.FINISH_STAGE2:
+            if address in (P.FINISH_STAGE1, P.FINISH_STAGE2):
                 if self.community and address != finish:
                     # The hub acknowledges the other stage's finish and keeps serving.
                     link.send(P.read_reply(p, P.SUCCESS))
@@ -363,15 +371,23 @@ class Updater:
         except ImportError:
             pass
         factory = self.pkg.factory_bank()
-        check(P.identity(self.link.query(P.CMD_IDENTITY)) == P.STOCK_PRODUCT, "restoring voices needs stock V15")
+        check(
+            P.identity(self.link.query(P.CMD_IDENTITY)) == P.STOCK_PRODUCT,
+            "restoring voices needs stock V15",
+        )
         phase = "Restoring factory voices"
         self.status(phase, 0)
         for bank in range(0, 16384, 4096):
             self._ack(P.CMD_BANK_BEGIN, P.bank_begin_payload(bank))
             for offset in range(bank, bank + 4096, 512):
-                self._ack(P.CMD_BANK_WRITE, P.bank_write_payload(offset, factory[offset:offset + 512]))
+                self._ack(
+                    P.CMD_BANK_WRITE, P.bank_write_payload(offset, factory[offset : offset + 512])
+                )
                 self.status(phase, (offset + 512) * 99 // 16384)
-        check(P.identity(self.link.query(P.CMD_IDENTITY)) == P.STOCK_PRODUCT, "restoring voices needs stock V15")
+        check(
+            P.identity(self.link.query(P.CMD_IDENTITY)) == P.STOCK_PRODUCT,
+            "restoring voices needs stock V15",
+        )
 
     def _restore_after_boot(self):
         """V15 re-enumerates once a few seconds after its first boot, which drops
@@ -419,6 +435,7 @@ class Updater:
             except FM1Timeout:
                 if attempt == 2 or self.link.lost:
                     raise
+        return None  # not reached: the last try returns or raises
 
     def install(self, force=False):
         check(self.link is not None, "connect first")
@@ -439,10 +456,15 @@ class Updater:
             if self.mode != "loader":
                 if self.mode == "tagged":
                     cap = P.capability(self.link.query(P.CMD_CAPABILITY))
-                    check(cap["family"] == self.family and cap["state"] == 0, "device state changed; reconnect")
+                    check(
+                        cap["family"] == self.family and cap["state"] == 0,
+                        "device state changed; reconnect",
+                    )
                     check(cap["build"] != self.meta["build_id"], "device already runs this build")
-                    ack = self.link.query(P.CMD_ARM, P.arm_payload(cap["family"], self.pkg.image_len,
-                                                                   self.meta["build_id"]))
+                    ack = self.link.query(
+                        P.CMD_ARM,
+                        P.arm_payload(cap["family"], self.pkg.image_len, self.meta["build_id"]),
+                    )
                     check(ack == b"\x00", "device refused this package")
                 self.status("Staging loader", 0)
                 self.link.send(P.KICK)
@@ -464,8 +486,12 @@ class Updater:
                 self._restore_after_boot()
             else:
                 after = P.capability(self.link.query(P.CMD_CAPABILITY))
-                check(after["family"] == self.meta["family"] and after["build"] == self.meta["build_id"]
-                      and after["state"] == 0, "restarted, but the firmware build does not match")
+                check(
+                    after["family"] == self.meta["family"]
+                    and after["build"] == self.meta["build_id"]
+                    and after["state"] == 0,
+                    "restarted, but the firmware build does not match",
+                )
             self.status("Done", 100)
         finally:
             self.disconnect()

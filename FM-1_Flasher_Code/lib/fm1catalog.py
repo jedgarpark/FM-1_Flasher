@@ -19,6 +19,9 @@ continues where it stopped (finished firmwares already match the catalogue).
 
 Only os functions both Pythons have are used (no os.path, os.makedirs, shutil).
 """
+# Disabled for the Learn Guides lint check: modules are imported where they're needed, to keep RAM
+# free and start-up quick.
+# pylint: disable=import-outside-toplevel
 import json
 import os
 
@@ -47,9 +50,16 @@ def entries(cat, ids=None):
     stock = cat.get("stock")
     if stock and stock.get("pkg"):
         s = dict(stock)
-        s.update(id=STOCK_ID, name="M-VAVE V15", author="M-VAVE", version="V15", kind="official",
-                 lic="Apache-2.0",
-                 what="The FM-1's official firmware, with its factory voices restored after the install.")
+        s.update(
+            id=STOCK_ID,
+            name="M-VAVE V15",
+            author="M-VAVE",
+            version="V15",
+            kind="official",
+            lic="Apache-2.0",
+            what="The FM-1's official firmware, with its factory voices restored "
+            "after the install.",
+        )
         out.insert(0, s)
     if ids:
         known = set(e["id"] for e in out)
@@ -63,14 +73,25 @@ def entries(cat, ids=None):
 def meta_for(e):
     """meta.json's catalogue fields for entry `e` (finish() adds the rest)."""
     kind = e.get("kind")
-    meta = {"name": e.get("name") or e["id"], "author": e.get("author"), "version": e.get("version"),
-            "product": e["product"], "sha256": e["sha256"], "catalog_id": e["id"],
-            "source_url": e.get("source") or e.get("release") or
-            ("https://github.com/" + e["repo"] if e.get("repo") else None),
-            "genre": ",".join(kind) if isinstance(kind, list) else kind, "beta": bool(e.get("beta")),
-            "release_version": e.get("version"), "description": e.get("what"),
-            "license": e.get("lic"), "date": e.get("date"), "added": e.get("added"),
-            "installs": e.get("installs")}
+    meta = {
+        "name": e.get("name") or e["id"],
+        "author": e.get("author"),
+        "version": e.get("version"),
+        "product": e["product"],
+        "sha256": e["sha256"],
+        "catalog_id": e["id"],
+        "source_url": e.get("source")
+        or e.get("release")
+        or ("https://github.com/" + e["repo"] if e.get("repo") else None),
+        "genre": ",".join(kind) if isinstance(kind, list) else kind,
+        "beta": bool(e.get("beta")),
+        "release_version": e.get("version"),
+        "description": e.get("what"),
+        "license": e.get("lic"),
+        "date": e.get("date"),
+        "added": e.get("added"),
+        "installs": e.get("installs"),
+    }
     return dict((k, v) for k, v in meta.items() if v is not None)
 
 
@@ -103,7 +124,10 @@ def finish(meta, f):
         else:
             meta["kind"] = "open"
     if meta["kind"] == "open" and "build_id" not in meta:
-        raise P.FM1Error("%s: build_id unknown; pass --build-id or use the release's Update.html" % meta["product"])
+        raise P.FM1Error(
+            "%s: build_id unknown; pass --build-id or use the release's Update.html"
+            % meta["product"]
+        )
     meta.setdefault("name", meta.get("profile") or meta["product"])
     if meta["kind"] == "stock" and not meta.get("source_url"):
         meta["source_url"] = "https://github.com/m-vave/fm1_open"
@@ -183,7 +207,9 @@ def read_meta(folder):
 def dumps(data):
     """json.dumps with sorted keys, which CircuitPython's json lacks (and
     CPython's would keep in insertion order). Top level only, as meta.json."""
-    return "{" + ", ".join("%s: %s" % (json.dumps(k), json.dumps(data[k])) for k in sorted(data)) + "}"
+    return (
+        "{" + ", ".join("%s: %s" % (json.dumps(k), json.dumps(data[k])) for k in sorted(data)) + "}"
+    )
 
 
 def write_part(path, data):
@@ -325,7 +351,7 @@ def store(root, e, meta):
     replace(d + "/meta.json" + PART, d + "/meta.json")
 
 
-def download(root, e, stream, chunk=None):
+def download(root, e, stream):
     """A generator: stream catalogue entry `e`'s package to the card, check its
     size and SHA-256 against the catalogue, run the full package checks and
     store it with meta.json. stream(url) yields the package's bytes in chunks.
@@ -377,8 +403,16 @@ def write_index(root, updated=None):
         m = read_meta(root + "/" + slug)
         if not m or "product" not in m:
             continue
-        fields = (slug, m.get("name", slug), m.get("version", ""), m.get("genre") or m.get("kind", ""),
-                  1 if m.get("beta") else 0, m["product"], m.get("added") or "", m.get("date") or "")
+        fields = (
+            slug,
+            m.get("name", slug),
+            m.get("version", ""),
+            m.get("genre") or m.get("kind", ""),
+            1 if m.get("beta") else 0,
+            m["product"],
+            m.get("added") or "",
+            m.get("date") or "",
+        )
         line = "\t".join(str(v).replace("\t", " ").replace("\n", " ") for v in fields)
         rows.append((m.get("kind") != "stock", m.get("name", slug).lower(), line))
     rows.sort()

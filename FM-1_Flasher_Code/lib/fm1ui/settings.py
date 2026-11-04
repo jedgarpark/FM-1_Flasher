@@ -8,6 +8,11 @@ and adds new ones: scan, pick a network, type its password on the on-screen
 keyboard. app.updater is the board's network (fm1ui.metro_p4.Network): status,
 scan, join, connect and saved (fm1ui.networks.Saved).
 """
+# Disabled for the Learn Guides lint check: screens make their widgets in build(), each time
+# they're shown; modules are imported where they're needed, to keep RAM free and start-up quick;
+# methods kept on their class: the screen interface, or overridden; some drawing and protocol
+# functions are long by nature.
+# pylint: disable=attribute-defined-outside-init,import-outside-toplevel,no-self-use,too-many-locals
 import displayio
 
 from fm1ui import catalog as C
@@ -49,11 +54,13 @@ def _switch(x, y, on):
     g = ui.outlined(x, y, 46, 22, ui.CYAN if on else ui.BG, ui.CYAN if on else ui.LINE, cut=6)
     kx = x + 26 if on else x + 4
     g.append(ui.panel(kx, y + 4, 16, 14, ui.BG if on else ui.DIM, 4))
-    g.append(ui.text(ui.SMALL, "On" if on else "Off", ui.BG if on else ui.DIM, x - 8, y + 11, (1, 0.5)))
+    g.append(
+        ui.text(ui.SMALL, "On" if on else "Off", ui.BG if on else ui.DIM, x - 8, y + 11, (1, 0.5))
+    )
     return g
 
 
-class _Paged(Screen):
+class _Paged(Screen):  # pylint: disable=abstract-method
     """A screen with a page of rows and arrows in the footer."""
 
     KEEP = Screen.KEEP + ("page",)
@@ -83,7 +90,11 @@ class _Paged(Screen):
             bx, by, bw, bh = rect
             box = ui.outlined(bx, by, bw, bh, ui.PANEL if active else ui.BG, ui.LINE)
             g.append(box)
-            g.append(ui.triangle(bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left))
+            g.append(
+                ui.triangle(
+                    bx + bw // 2 - 5, by + bh // 2 - 8, 10, 16, ui.CYAN if active else ui.LINE, left
+                )
+            )
             if active:
                 if left:
                     self.prev_g = box
@@ -143,7 +154,7 @@ class TextScreen(Screen):
         body = displayio.Group()
         y = self.TOP + 4
         for name, text, color in self.lines():
-            for part in C.wrap(text, lambda s: ui.width(name, s), W - 24):
+            for part in C.wrap(text, lambda s, n=name: ui.width(n, s), W - 24):
                 body.append(ui.text(name, part, color, 12, y, (0, 0)))
                 y += 18 if name != ui.SMALL else 16
             y += 6
@@ -160,7 +171,9 @@ class TextScreen(Screen):
         self.thumb = None
         if self.most:
             g.append(ui.rect(W - 4, self.TOP + 2, 2, band - 4, ui.LINE))
-            self.thumb = ui.rect(W - 4, self.TOP + 2, 2, max(12, (band - 4) * band // (band + self.most)), ui.DIM)
+            self.thumb = ui.rect(
+                W - 4, self.TOP + 2, 2, max(12, (band - 4) * band // (band + self.most)), ui.DIM
+            )
             g.append(self.thumb)
             self._place_thumb()
         self.group = g
@@ -171,7 +184,7 @@ class TextScreen(Screen):
             room = L.H - self.TOP - 4 - 4 - self.thumb.height
             self.thumb.y = self.TOP + 2 + room * max(0, min(self.most, self.scroll)) // self.most
 
-    def vdrag(self, dy, x0, y0):
+    def vdrag(self, dy, _x0, _y0):
         if not self.most:
             return
         if not self.dragging:
@@ -209,10 +222,19 @@ class CreditsScreen(TextScreen):
             (H, "FM-1 Firmware Flasher", ui.CYAN),
             (T, "By John Park for Adafruit, 2026. Open source under the GPL-3.0 license.", D),
             (H, "The FM-1 Firmware Hub", ui.CYAN),
-            (T, "thefirmwarehub.com, by zvenson: the FM-1 community firmware hub. Its catalog, "
-                "packages and pictures are what Catalog downloads and this flasher installs.", D),
+            (
+                T,
+                "thefirmwarehub.com, by zvenson: the FM-1 community firmware hub. Its catalog, "
+                "packages and pictures are what Catalog downloads and this flasher installs.",
+                D,
+            ),
             (H, "The firmware authors", ui.CYAN),
-            (T, "Every firmware belongs to its authors, each under its own license, shown on its page.", D),
+            (
+                T,
+                "Every firmware belongs to its authors, each under its own license, "
+                "shown on its page.",
+                D,
+            ),
             (H, "M-VAVE", ui.CYAN),
             (T, "The FM-1, its V15 firmware and factory voices, and fm1_open (Apache-2.0).", D),
             (H, "CircuitPython and Adafruit", ui.CYAN),
@@ -236,14 +258,18 @@ class SettingsScreen(Screen):
         self.wifi_g = ui.outlined(x, y, w, h, ui.PANEL, ui.LINE)
         self.wifi_g.append(ui.text(ui.NAME, "WiFi", ui.FG, x + 12, y + h // 2, (0, 0.5)))
         state = _fit(ui.BODY, ssid, w - 110) if ssid else "Not connected"
-        self.wifi_g.append(ui.text(ui.BODY, state, ui.OK if ssid else ui.WARN, x + w - 26, y + h // 2, (1, 0.5)))
+        self.wifi_g.append(
+            ui.text(ui.BODY, state, ui.OK if ssid else ui.WARN, x + w - 26, y + h // 2, (1, 0.5))
+        )
         self.wifi_g.append(ui.triangle(x + w - 16, y + h // 2 - 6, 7, 12, ui.DIM, False))
         g.append(self.wifi_g)
         self.scroll_rect = (x, y + h + 8, w, h)
         sx, sy = x, y + h + 8
         on = self.app.state.scroll
         self.scroll_g = ui.outlined(*self.scroll_rect, ui.PANEL, ui.LINE)
-        self.scroll_g.append(ui.text(ui.NAME, "Scroll pages", ui.FG, sx + 12, sy + h // 2, (0, 0.5)))
+        self.scroll_g.append(
+            ui.text(ui.NAME, "Scroll pages", ui.FG, sx + 12, sy + h // 2, (0, 0.5))
+        )
         self.scroll_g.append(_switch(sx + w - 58, sy + (h - 22) // 2, on))
         g.append(self.scroll_g)
         self.credits_rect = (x, sy + h + 8, w, h)
@@ -327,7 +353,11 @@ class WifiScreen(_Paged):
         ssid, ip = self.app.updater.status()
         x = 12
         if self.note:
-            g.append(ui.text(ui.BODY, _fit(ui.BODY, self.note[0], W - 2 * x), self.note[1], x, 44, (0, 0)))
+            g.append(
+                ui.text(
+                    ui.BODY, _fit(ui.BODY, self.note[0], W - 2 * x), self.note[1], x, 44, (0, 0)
+                )
+            )
         elif ssid:
             g.append(ui.text(ui.BODY, _fit(ui.BODY, "On " + ssid, W - 2 * x), ui.OK, x, 44, (0, 0)))
             g.append(ui.text(ui.SMALL, ip, ui.DIM, x, 64, (0, 0)))
@@ -339,7 +369,9 @@ class WifiScreen(_Paged):
         per = self.per_page()
         top = self.rows_top()
         if not rows:
-            g.append(ui.text(ui.BODY, "No saved networks yet.", ui.DIM, W // 2, top + 20, (0.5, 0.5)))
+            g.append(
+                ui.text(ui.BODY, "No saved networks yet.", ui.DIM, W // 2, top + 20, (0.5, 0.5))
+            )
         for i, (name, _, saved) in enumerate(C.page_slice(rows, self.page, per)):
             y = top + i * ROW_PITCH
             on = name == ssid
@@ -354,11 +386,18 @@ class WifiScreen(_Paged):
             if saved:
                 frect = (W - 6 - fw, y, fw, ROW_H)
                 sure = self.sure == name
-                forget = ui.Button("Sure?" if sure else "Forget", *frect, name=ui.SMALL,
-                                   edge=ui.WARN if sure else ui.LINE, color=ui.WARN if sure else ui.DIM)
+                forget = ui.Button(
+                    "Sure?" if sure else "Forget",
+                    *frect,
+                    name=ui.SMALL,
+                    edge=ui.WARN if sure else ui.LINE,
+                    color=ui.WARN if sure else ui.DIM
+                )
                 g.append(forget.group)
             else:
-                g.append(ui.text(ui.SMALL, "settings.toml", ui.DIM, W - 16, y + ROW_H // 2, (1, 0.5)))
+                g.append(
+                    ui.text(ui.SMALL, "settings.toml", ui.DIM, W - 16, y + ROW_H // 2, (1, 0.5))
+                )
             self.rows.append((name, rect, row, forget))
         bw = 120
         self.add = ui.Button("Add network", (W - bw) // 2, L.H - 32, bw, 28, name=ui.SMALL)
@@ -367,7 +406,7 @@ class WifiScreen(_Paged):
         return g
 
     def _row_at(self, x, y):
-        for name, rect, row, forget in self.rows:
+        for name, rect, _row, forget in self.rows:
             if forget and forget.hit(x, y, 2):
                 return name, forget
             if _hit(rect, x, y):
@@ -386,7 +425,7 @@ class WifiScreen(_Paged):
         if forget:
             return forget.group
         if name:
-            for n, rect, row, f in self.rows:
+            for n, _rect, row, _f in self.rows:
                 if n == name:
                     return row
         return None
@@ -421,7 +460,7 @@ class WifiScreen(_Paged):
             return
         name, self.work = self.work, None
         password = None
-        for n, p, saved in self.networks():
+        for n, p, _saved in self.networks():
             if n == name:
                 password = p
         err = self.app.updater.join(name, password or "")
@@ -447,14 +486,16 @@ class ScanScreen(_Paged):
         W = L.W
         g = displayio.Group()
         self.back = _header(g, "Networks")
-        bx, by, bw, bh = L.BACK_BTN
+        bx, by, _, bh = L.BACK_BTN
         self.rescan = ui.Button("Rescan", W - bx - 76, by, 76, bh, name=ui.SMALL)
         g.append(self.rescan.group)
         self.rows = []
         found = self.found or []
         self.arrows(g, len(found))
         if self.found is None:
-            g.append(ui.text(ui.BODY, "Looking for networks...", ui.DIM, W // 2, L.H // 2, (0.5, 0.5)))
+            g.append(
+                ui.text(ui.BODY, "Looking for networks...", ui.DIM, W // 2, L.H // 2, (0.5, 0.5))
+            )
         elif self.error:
             g.append(wrapped(ui.BODY, self.error, ui.BAD, W // 2, L.H // 2, W - 24, (0.5, 0.5)))
         elif not found:
@@ -477,7 +518,16 @@ class ScanScreen(_Paged):
             g.append(row)
             self.rows.append((ssid, is_open, rect, row))
         if self.found and self.pages > 1:
-            g.append(ui.text(ui.SMALL, "%d/%d" % (self.page + 1, self.pages), ui.FG, W // 2, L.H - 18, (0.5, 0.5)))
+            g.append(
+                ui.text(
+                    ui.SMALL,
+                    "%d/%d" % (self.page + 1, self.pages),
+                    ui.FG,
+                    W // 2,
+                    L.H - 18,
+                    (0.5, 0.5),
+                )
+            )
         self.group = g
         return g
 
@@ -517,7 +567,7 @@ class ScanScreen(_Paged):
         elif self.arrow_at(x, y):
             self.turn(self.arrow_at(x, y))
         else:
-            ssid, is_open, row = self._row_at(x, y)
+            ssid, is_open, _ = self._row_at(x, y)
             if ssid:
                 self.app.push(PasswordScreen(self.app, ssid, is_open))
 
@@ -573,9 +623,25 @@ class Keyboard:
                 if self.shift and len(value) == 1:
                     label = value = value.upper()
                 lit = value == "shift" and self.shift
-                g = ui.outlined(kx + 1, y + 1, kw - self.GAP, pitch - self.GAP, ui.CYAN if lit else ui.PANEL, ui.LINE)
+                g = ui.outlined(
+                    kx + 1,
+                    y + 1,
+                    kw - self.GAP,
+                    pitch - self.GAP,
+                    ui.CYAN if lit else ui.PANEL,
+                    ui.LINE,
+                )
                 font = ui.NAME if len(label) == 1 else ui.SMALL
-                g.append(ui.text(font, label, ui.BG if lit else ui.FG, kx + kw // 2, y + pitch // 2, (0.5, 0.5)))
+                g.append(
+                    ui.text(
+                        font,
+                        label,
+                        ui.BG if lit else ui.FG,
+                        kx + kw // 2,
+                        y + pitch // 2,
+                        (0.5, 0.5),
+                    )
+                )
                 self.group.append(g)
                 self.keys.append(((kx, y, kw, pitch), value, g))
                 x += units * unit
@@ -631,7 +697,9 @@ class PasswordScreen(Screen):
         g = displayio.Group()
         self.back = _header(g, self.ssid, back="Cancel")
         bx, by, bw, bh = L.BACK_BTN
-        self.join = ui.Button("Join", W - bx - bw, by, bw, bh, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
+        self.join = ui.Button(
+            "Join", W - bx - bw, by, bw, bh, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG
+        )
         g.append(self.join.group)
         self.field_rect = (6, 38, W - 12, 30)
         g.append(ui.outlined(*self.field_rect, ui.PANEL, ui.LINE))
@@ -650,7 +718,16 @@ class PasswordScreen(Screen):
         x, y, w, h = self.field_rect
         fg = displayio.Group()
         if self.note:
-            fg.append(ui.text(ui.BODY, _fit(ui.BODY, self.note[0], w - 16), self.note[1], x + 8, y + h // 2, (0, 0.5)))
+            fg.append(
+                ui.text(
+                    ui.BODY,
+                    _fit(ui.BODY, self.note[0], w - 16),
+                    self.note[1],
+                    x + 8,
+                    y + h // 2,
+                    (0, 0.5),
+                )
+            )
             return fg
         s = self.text
         room = w - 22

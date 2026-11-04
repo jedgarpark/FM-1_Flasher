@@ -12,6 +12,11 @@ net is passed in: .connect() -> None or an error message; .get_json(url);
 .get(url) -> bytes; .stream(url) -> a generator of byte chunks. Errors are
 OSError (network) or ValueError.
 """
+# Disabled for the Learn Guides lint check: screens make their widgets in build(), each time
+# they're shown; modules are imported where they're needed, to keep RAM free and start-up quick;
+# some drawing and protocol functions are long by nature.
+# pylint: disable=attribute-defined-outside-init,import-outside-toplevel,too-many-branches
+# pylint: disable=too-many-locals,too-many-statements
 import os
 import time
 
@@ -78,10 +83,15 @@ def job(root, plan, net, stats):
             if since_index >= 10:  # so a power cut loses little of the list
                 K.write_index(root)
                 since_index = 0
-        except Exception as ex:  # a bad download or package: skip it, go on
+        # A bad download or package: skip it and go on.
+        except Exception as ex:  # pylint: disable=broad-except
             print("update: %s failed: %r" % (e["id"], ex))
             stats["failed"].append(e["id"])
-            if isinstance(ex, OSError) and len(stats["failed"]) >= 3 and stats["new"] + stats["updated"] == 0:
+            if (
+                isinstance(ex, OSError)
+                and len(stats["failed"]) >= 3
+                and stats["new"] + stats["updated"] == 0
+            ):
                 raise  # the network is down, not one package
         finally:
             dl.close()  # on Stop: closes its file and download (MicroPython
@@ -143,7 +153,9 @@ class UpdateScreen:
         g = displayio.Group()
         g.append(ui.rect(0, 0, W, H, ui.BG))
         g.append(ui.rect(0, 0, W, 3, ui.CYAN))
-        self.title = ui.text(ui.TITLE, "Update firmwares", ui.FG, W // 2, L.PROGRESS_TITLE_Y, (0.5, 0))
+        self.title = ui.text(
+            ui.TITLE, "Update firmwares", ui.FG, W // 2, L.PROGRESS_TITLE_Y, (0.5, 0)
+        )
         g.append(self.title)
         self.sub = ui.text(ui.BODY, " ", ui.DIM, W // 2, L.PROGRESS_SUB_Y, (0.5, 0))
         g.append(self.sub)
@@ -167,8 +179,8 @@ class UpdateScreen:
         g.append(self.note2)
         self.lines_at = len(g)
         g.append(displayio.Group())  # the plan's or an error's lines (_lines)
-        cx, cy, cw, ch = L.CANCEL_BTN
-        gx, gy, gw, gh = L.GO_BTN
+        cx, _, cw, ch = L.CANCEL_BTN
+        gx, _, gw, gh = L.GO_BTN
         by2 = L.OK_BTN[1]
         self.mid = None
         if self.mode == "plan" and self.plan.offered:  # Back | Details | Update
@@ -176,11 +188,15 @@ class UpdateScreen:
             w = (gx + gw - cx - 2 * gap) // 3
             self.left = ui.Button("Back", cx, by2, w, ch)
             self.mid = ui.Button("Details", cx + w + gap, by2, w, ch)
-            self.right = ui.Button("Update", gx + gw - w, by2, w, gh, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
+            self.right = ui.Button(
+                "Update", gx + gw - w, by2, w, gh, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG
+            )
             g.append(self.mid.group)
         else:
             self.left = ui.Button("Back", cx, by2, cw, ch)
-            self.right = ui.Button("Update", gx, by2, gw, gh, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG)
+            self.right = ui.Button(
+                "Update", gx, by2, gw, gh, fill=ui.CYAN, edge=ui.CYAN, color=ui.BG
+            )
         g.append(self.left.group)
         g.append(self.right.group)
         self.group = g
@@ -208,7 +224,7 @@ class UpdateScreen:
         g = displayio.Group()
         y = L.PROGRESS_SUB_Y + 40
         for name, s, color in items:
-            for part in C.wrap(s, lambda t: ui.width(name, t), L.W - 24):
+            for part in C.wrap(s, lambda t, n=name: ui.width(n, t), L.W - 24):
                 g.append(ui.text(name, part, color, L.W // 2, y, (0.5, 0)))
                 y += 20
             y += 6
@@ -260,18 +276,40 @@ class UpdateScreen:
                 self._buttons("Back", None)
             elif p.offered:  # only firmwares removed on the device
                 n = len(p.skip)
-                self._lines(((ui.NAME, "Up to date", ui.OK),
-                             (ui.BODY, "%d you removed %s left out. Tick %s in Details to get %s back." % (
-                                 n, "is" if n == 1 else "are", "it" if n == 1 else "them",
-                                 "it" if n == 1 else "them"), ui.TEXT)))
+                self._lines(
+                    (
+                        (ui.NAME, "Up to date", ui.OK),
+                        (
+                            ui.BODY,
+                            "%d you removed %s left out. Tick %s in Details to get %s back."
+                            % (
+                                n,
+                                "is" if n == 1 else "are",
+                                "it" if n == 1 else "them",
+                                "it" if n == 1 else "them",
+                            ),
+                            ui.TEXT,
+                        ),
+                    )
+                )
                 self._buttons("Back", None)
             else:
-                self._lines(((ui.NAME, "Up to date", ui.OK),
-                             (ui.BODY, "The card has all %d firmwares on the hub." % len(p.same), ui.TEXT)))
+                self._lines(
+                    (
+                        (ui.NAME, "Up to date", ui.OK),
+                        (
+                            ui.BODY,
+                            "The card has all %d firmwares on the hub." % len(p.same),
+                            ui.TEXT,
+                        ),
+                    )
+                )
                 self._buttons("Back", None)
         elif m == "run":
             self.sub.set(" ")
-            self._set_note("You can keep using the flasher afterwards; Stop keeps what's done.", ui.DIM)
+            self._set_note(
+                "You can keep using the flasher afterwards; Stop keeps what's done.", ui.DIM
+            )
             self._buttons(None, "Stop")
         elif m == "done":
             s = self.stats
@@ -411,7 +449,7 @@ class UpdateScreen:
         except StopIteration:
             self.finish()
             return
-        except Exception as e:  # the network went away
+        except Exception as e:  # pylint: disable=broad-except  # the network went away
             print("update: stopped: %r" % e)
             self.stats["failed"].append("network")
             self.finish()
@@ -437,7 +475,7 @@ class UpdateScreen:
         if work is not None:
             try:
                 work.close()  # closes an open download
-            except Exception:
+            except Exception:  # pylint: disable=broad-except
                 pass
         if not self.stats["index"]:  # stopped: the list, without a new date
             try:
@@ -517,8 +555,15 @@ class PlanScreen:
         g.append(self.none_btn.group)
         tx = bx + bw + 6
         tag_color = ui.kind_color(self.tag) if self.tag else ui.CYAN
-        self.tag_btn = ui.Button(tag_label(self.tag) if self.tag else "All Types", tx, by, min(120, self.all_btn.rect[0] - 6 - tx), bh,
-                                 edge=tag_color, color=tag_color if self.tag else ui.FG)
+        self.tag_btn = ui.Button(
+            tag_label(self.tag) if self.tag else "All Types",
+            tx,
+            by,
+            min(120, self.all_btn.rect[0] - 6 - tx),
+            bh,
+            edge=tag_color,
+            color=tag_color if self.tag else ui.FG,
+        )
         g.append(self.tag_btn.group)
         rows = self.visible()
         self._paged.arrows(self, g, len(rows))
@@ -543,9 +588,21 @@ class PlanScreen:
             room = right - left
             change = C.ellipsize(change, lambda s: ui.width(ui.SMALL, s), room // 2)
             cw = ui.width(ui.SMALL, change)
-            g.append(ui.text(ui.NAME, C.ellipsize(label, lambda s: ui.width(ui.NAME, s), room - cw - 10),
-                             ui.FG if on else ui.DIM, left, y + self.ROW_H // 2, (0, 0.5)))
-            g.append(ui.text(ui.SMALL, change, color if on else ui.LINE, right, y + self.ROW_H // 2, (1, 0.5)))
+            g.append(
+                ui.text(
+                    ui.NAME,
+                    C.ellipsize(label, lambda s: ui.width(ui.NAME, s), room - cw - 10),
+                    ui.FG if on else ui.DIM,
+                    left,
+                    y + self.ROW_H // 2,
+                    (0, 0.5),
+                )
+            )
+            g.append(
+                ui.text(
+                    ui.SMALL, change, color if on else ui.LINE, right, y + self.ROW_H // 2, (1, 0.5)
+                )
+            )
             self.infos.append((cid, info))
             self.shown.append((cid, (0, y, W, self.PITCH)))
         n = len(self.rows)
@@ -571,7 +628,7 @@ class PlanScreen:
         """The Info button a tap is on: its width and a few px to its left,
         the row's height (the rows are close together)."""
         for cid, b in self.infos:
-            bx, by, bw, bh = b.rect
+            bx, by, _, bh = b.rect
             if bx - 6 <= x and by - 3 <= y < by + bh + 1:
                 return cid, b
         return None, None

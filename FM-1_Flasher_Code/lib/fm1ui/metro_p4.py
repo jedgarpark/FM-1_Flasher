@@ -13,6 +13,11 @@ fm1ui.device imports these:
 - USB host: the P4's USB-A port (needs the 512-byte enumeration buffer
   build with the TinyUSB DWC2 abort fix, patches/README.md).
 """
+# Disabled for the Learn Guides lint check: the board's hardware objects are module-level, made
+# once; modules are imported where they're needed, to keep RAM free and start-up quick; methods
+# kept on their class: the screen interface, or overridden; fm1ui's modules share a few internal
+# helpers.
+# pylint: disable=global-statement,import-outside-toplevel,no-self-use,protected-access
 import time
 
 import board
@@ -82,7 +87,7 @@ def display_redo(display):
     _splash_bmp = None
 
 
-def host_setup(spi):
+def host_setup(_spi):
     """5 V on the USB-A port and the host on it."""
     global _host
     if _host is None:
@@ -93,7 +98,7 @@ def host_setup(spi):
         _host = (power, usb_host.Port(board.USB_HOST_DP, board.USB_HOST_DM))
 
 
-def mount_sd(spi):
+def mount_sd(_spi):
     """Mount the Metro's microSD at /sd. False if there is no card."""
     import storage
     try:
@@ -184,7 +189,8 @@ class Network:
         if not wifi.radio.connected:
             tries = networks.candidates(self.saved, self.toml())
             if not tries:
-                return "No WiFi set up. Add a network in Settings (the gear), or in settings.toml on CIRCUITPY."
+                return ("No WiFi set up. Add a network in Settings (the gear), "
+                        "or in settings.toml on CIRCUITPY.")
             try:
                 seen = [n[0] for n in self.scan()]
                 tries = [c for c in tries if c[0] in seen]

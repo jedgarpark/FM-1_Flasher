@@ -23,6 +23,9 @@ the hub's pictures) go byte by byte.
 convert() is a generator that yields every few rows, so the UI stays live.
 Handles 8-bit greyscale, RGB, palette, grey+alpha and RGBA, not interlaced.
 """
+# Disabled for the Learn Guides lint check: modules are imported where they're needed, to keep RAM
+# free and start-up quick; some drawing and protocol functions are long by nature.
+# pylint: disable=import-outside-toplevel,too-many-locals
 import zlib
 
 try:
@@ -54,9 +57,15 @@ def read_png(data):
         if kind == b"IHDR":
             w, h, depth, ct, interlace = _u32(body, 0), _u32(body, 4), body[8], body[9], body[12]
             if depth != 8 or interlace or ct not in _CHANNELS:
-                raise ValueError("unsupported PNG (depth %d, colour type %d, interlace %d)" % (depth, ct, interlace))
+                raise ValueError(
+                    "unsupported PNG (depth %d, colour type %d, interlace %d)"
+                    % (depth, ct, interlace)
+                )
         elif kind == b"PLTE":
-            palette = [(body[i] << 16) | (body[i + 1] << 8) | body[i + 2] for i in range(0, len(body) - 2, 3)]
+            palette = [
+                (body[i] << 16) | (body[i + 1] << 8) | body[i + 2]
+                for i in range(0, len(body) - 2, 3)
+            ]
         elif kind == b"IDAT":
             idat.append(body)
         elif kind == b"IEND":
@@ -312,9 +321,23 @@ def bmp(palette, indices, side=SIDE):
     pal = b"".join(bytes((c & 0xFF, (c >> 8) & 0xFF, c >> 16, 0)) for c in palette)
     offset = 14 + 40 + len(pal)
     size = offset + side * side
-    head = (b"BM" + le(size, 4) + le(0, 4) + le(offset, 4) +
-            le(40, 4) + le(side, 4) + le(side, 4) + le(1, 2) + le(8, 2) + le(0, 4) + le(side * side, 4) +
-            le(2835, 4) + le(2835, 4) + le(len(palette), 4) + le(len(palette), 4))
+    head = (
+        b"BM"
+        + le(size, 4)
+        + le(0, 4)
+        + le(offset, 4)
+        + le(40, 4)
+        + le(side, 4)
+        + le(side, 4)
+        + le(1, 2)
+        + le(8, 2)
+        + le(0, 4)
+        + le(side * side, 4)
+        + le(2835, 4)
+        + le(2835, 4)
+        + le(len(palette), 4)
+        + le(len(palette), 4)
+    )
     rows = [indices[y * side:(y + 1) * side] for y in range(side - 1, -1, -1)]
     return head + pal + b"".join(rows)
 

@@ -17,6 +17,9 @@ installer .start(app, entry): run the install, on a ProgressScreen it
 updater   None, or the network fm1ui.update uses (boards with WiFi): the
           list then offers Update firmwares
 """
+# Disabled for the Learn Guides lint check: modules are imported where they're needed, to keep RAM
+# free and start-up quick.
+# pylint: disable=import-outside-toplevel,too-many-branches
 import gc
 import time
 
@@ -111,7 +114,9 @@ class App:
     def finish_install(self):
         """OK after an install: back to the firmware's details, and ask the
         FM-1, which restarted, what it runs now."""
-        while len(self.stack) > 2 and isinstance(self.stack[-1], (S.ProgressScreen, S.ConfirmScreen)):
+        while len(self.stack) > 2 and isinstance(
+            self.stack[-1], (S.ProgressScreen, S.ConfirmScreen)
+        ):
             self.stack.pop()
         self.identity = None
         self.show()
