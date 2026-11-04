@@ -170,7 +170,7 @@ class UpdateScreen:
         gx, gy, gw, gh = L.GO_BTN
         by2 = L.OK_BTN[1]
         self.mid = None
-        if self.mode == "plan" and self.plan.downloads:  # Back | Details | Update
+        if self.mode == "plan" and self.plan.offered:  # Back | Details | Update
             gap = 8
             w = (gx + gw - cx - 2 * gap) // 3
             self.left = ui.Button("Back", cx, by2, w, ch)
@@ -238,9 +238,11 @@ class UpdateScreen:
             self.info.set(" ")
             if p.downloads or self.pics:
                 counts = []
-                for n, what in ((len(p.new), "new"), (len(p.changed), "updated")):
+                for n, what in ((p.picked(p.new), "new"), (p.picked(p.changed), "updated")):
                     if n:
                         counts.append("%d %s" % (n, what))
+                if p.skip:
+                    counts.append("%d unticked" % len(p.skip))
                 size = []
                 if p.bytes:
                     size.append("%.1f MB to download" % (p.bytes / 1e6))
@@ -251,6 +253,10 @@ class UpdateScreen:
                              (ui.BODY, ", ".join(size), ui.TEXT),
                              (ui.BODY, "About %d min. Keep the flasher powered." % mins, ui.DIM)))
                 self._buttons("Back", "Update")
+            elif p.offered:
+                self._lines(((ui.NAME, "Nothing picked", ui.WARN),
+                             (ui.BODY, "Tick firmwares in Details to download them.", ui.TEXT)))
+                self._buttons("Back", None)
             else:
                 self._lines(((ui.NAME, "Up to date", ui.OK),
                              (ui.BODY, "The card has all %d firmwares on the hub." % len(p.same), ui.TEXT)))
@@ -296,7 +302,7 @@ class UpdateScreen:
 
     def tap(self, x, y):
         if self._mid_shown() and self.mid.hit(x, y, 4):
-            self.app.push(PlanScreen(self.app, self.plan))
+            self.app.push(PlanScreen(self.app, self.plan, self.picked))
         elif not self.left.group.hidden and self.left.hit(x, y, 4 if self.mid else 10):
             self.app.pop()
         elif not self.right.group.hidden and self.right.hit(x, y, 4 if self.mid else 10):
@@ -367,6 +373,10 @@ class UpdateScreen:
             print("update: dates: %r" % e)
         plan.dated = []
 
+    def picked(self):
+        """Back from Details: the ticks changed what the update fetches."""
+        self.pics = picture_list(self.app.root, self.plan)
+
     def start_run(self):
         if self.mid is not None:
             self.mid.group.hidden = True
@@ -430,26 +440,42 @@ class UpdateScreen:
 
 class PlanScreen:
     """The plan's firmwares, from Details on the Update screen: the new ones
-    first, then the updated ones with the version on the card and the new one."""
+    first, then the updated ones with the version on the card and the new
+    one. Each has a tick box (a tap anywhere on the line toggles it); unticked
+    ones aren't downloaded. The genre button (as on the list) shows one
+    genre at a time, and All and None tick or untick the lines it shows.
+    done() runs on Back when the ticks changed."""
 
-    ROW_H, PITCH, TOP = 24, 24, 40  # plain lines: they aren't buttons
+    ROW_H, PITCH, TOP = 24, 24, 40
+    BOX = 14  # the tick box
 
-    def __init__(self, app, plan):
+    def __init__(self, app, plan, done=None):
         from fm1ui.settings import _Paged
         self.app = app
+        self.plan = plan
+        self.done = done
+        self.changed_ticks = False
         self.group = None
         self.page = 0
+        self.tag = None  # a genre, or None for all
         rows = []
+        counts = {}
         name = lambda e: (e.get("name") or e["id"]).lower()  # noqa: E731
-        for e in sorted(plan.new, key=name):
-            rows.append((e.get("name") or e["id"], "new  " + str(e.get("version", "")), ui.OK))
-        for e in sorted(plan.changed, key=name):
-            old = (K.read_meta(app.root + "/" + e["id"]) or {}).get("version")
-            new = str(e.get("version", ""))
-            change = "%s, new build" % new if old == new else "%s > %s" % (old or "?", new)
-            rows.append((e.get("name") or e["id"], change, ui.DIM))
+        for e in sorted(plan.new, key=name) + sorted(plan.changed, key=name):
+            if e in plan.new:
+                change, color = "new  " + str(e.get("version", "")), ui.OK
+            else:
+                old = (K.read_meta(app.root + "/" + e["id"]) or {}).get("version")
+                new = str(e.get("version", ""))
+                change = "%s, new build" % new if old == new else "%s > %s" % (old or "?", new)
+                color = ui.DIM
+            kind = e.get("kind")
+            tags = kind if isinstance(kind, list) else [kind] if kind else []
+            for t in tags:
+                counts[t] = counts.get(t, 0) + 1
+            rows.append((e["id"], e.get("name") or e["id"], change, color, tags))
         self.rows = rows
-        self.counts = (len(plan.new), len(plan.changed))
+        self.tags = [t for t, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
         self._paged = _Paged  # its page arrows, borrowed
 
     def release(self):
@@ -459,48 +485,120 @@ class PlanScreen:
         return max(1, (L.H - 36 - self.TOP) // self.PITCH)
 
     def build(self):
-        from fm1ui.settings import _header
+        from fm1ui.screens import tag_label
         W = L.W
         g = displayio.Group()
-        self.back = _header(g, "Details")
-        n_new, n_changed = self.counts
-        parts = ["%d new" % n_new] if n_new else []
-        if n_changed:
-            parts.append("%d updated" % n_changed)
-        parts = [", ".join(parts)]
-        self._paged.arrows(self, g, len(self.rows))
+        g.append(ui.rect(0, 0, W, L.H, ui.BG))
+        bx, by, bw, bh = L.BACK_BTN
+        self.back = ui.Button("Back", bx, by, bw, bh)
+        g.append(self.back.group)
+        w = 48
+        self.none_btn = ui.Button("None", W - bx - w, by, w, bh)
+        self.all_btn = ui.Button("All", W - bx - 2 * w - 6, by, w, bh)
+        g.append(self.all_btn.group)
+        g.append(self.none_btn.group)
+        tx = bx + bw + 6
+        tag_color = ui.kind_color(self.tag) if self.tag else ui.CYAN
+        self.tag_btn = ui.Button(tag_label(self.tag) if self.tag else "All Types", tx, by, min(120, self.all_btn.rect[0] - 6 - tx), bh,
+                                 edge=tag_color, color=tag_color if self.tag else ui.FG)
+        g.append(self.tag_btn.group)
+        rows = self.visible()
+        self._paged.arrows(self, g, len(rows))
         per = self.per_page()
-        for i, (label, change, color) in enumerate(C.page_slice(self.rows, self.page, per)):
+        skip, box = self.plan.skip, self.BOX
+        self.shown = []  # (id, rect)
+        for i, (cid, label, change, color, _) in enumerate(C.page_slice(rows, self.page, per)):
             y = self.TOP + i * self.PITCH
             if i:
                 g.append(ui.rect(12, y, W - 24, 1, ui.LINE))  # a hairline between lines
-            room = W - 12 - 24
+            on = cid not in skip
+            cy = y + (self.ROW_H - box) // 2 + 1
+            g.append(ui.outlined(12, cy, box, box, ui.BG, ui.CYAN if on else ui.LINE, cut=0))
+            if on:
+                g.append(ui.rect(15, cy + 3, box - 6, box - 6, ui.CYAN))
+            left = 12 + box + 8
+            room = W - left - 12
             change = C.ellipsize(change, lambda s: ui.width(ui.SMALL, s), room // 2)
             cw = ui.width(ui.SMALL, change)
             g.append(ui.text(ui.NAME, C.ellipsize(label, lambda s: ui.width(ui.NAME, s), room - cw - 10),
-                             ui.FG, 12, y + self.ROW_H // 2, (0, 0.5)))
-            g.append(ui.text(ui.SMALL, change, color, W - 12, y + self.ROW_H // 2, (1, 0.5)))
+                             ui.FG if on else ui.DIM, left, y + self.ROW_H // 2, (0, 0.5)))
+            g.append(ui.text(ui.SMALL, change, color if on else ui.LINE, W - 12, y + self.ROW_H // 2, (1, 0.5)))
+            self.shown.append((cid, (0, y, W, self.PITCH)))
+        n = len(self.rows)
+        parts = ["%d of %d ticked" % (n - len(skip), n)]
         if self.pages > 1:
             parts.append("%d/%d" % (self.page + 1, self.pages))
         g.append(ui.text(ui.SMALL, "  ".join(parts), ui.FG, W // 2, L.H - 18, (0.5, 0.5)))
         self.group = g
         return g
 
+    def visible(self):
+        """The lines the genre button shows."""
+        if self.tag is None:
+            return self.rows
+        return [r for r in self.rows if self.tag in r[4]]
+
+    def next_tag(self):
+        """All -> each genre, most common first -> All."""
+        i = self.tags.index(self.tag) + 1 if self.tag in self.tags else 0
+        return self.tags[i] if i < len(self.tags) else None
+
+    def _row_at(self, x, y):
+        for cid, (rx, ry, rw, rh) in self.shown:
+            if rx <= x < rx + rw and ry <= y < ry + rh:
+                return cid
+        return None
+
     def target(self, x, y):
-        if self.back.hit(x, y):
-            return self.back.group
+        b = self._button_at(x, y)
+        if b is not None:
+            return b.group
         a = self._paged.arrow_at(self, x, y)
         if a:
             return self.prev_g if a < 0 else self.next_g
+        return None  # a line: its box changing is the feedback
+
+    def _button_at(self, x, y):
+        """Back, the genre, All or None: the one the tap is on, else the nearest
+        within a fingertip's slack."""
+        for slack in (0, 10):
+            for b in (self.back, self.tag_btn, self.all_btn, self.none_btn):
+                if b.hit(x, y, slack):
+                    return b
         return None
 
+    def _tick(self, skip):
+        self.plan.skip = skip
+        self.changed_ticks = True
+        self.app.show()
+
     def tap(self, x, y):
-        if self.back.hit(x, y):
+        b = self._button_at(x, y)
+        if b is self.back:
+            if self.changed_ticks and self.done:
+                self.done()
             self.app.pop()
+        elif b is self.tag_btn:
+            self.tag = self.next_tag()
+            self.page = 0
+            self.app.show()
+        elif b is self.all_btn:  # the lines shown: this genre, or every one
+            self._tick(self.plan.skip - set(r[0] for r in self.visible()))
+        elif b is self.none_btn:
+            self._tick(self.plan.skip | set(r[0] for r in self.visible()))
         else:
             a = self._paged.arrow_at(self, x, y)
             if a:
                 self._paged.turn(self, a)
+                return
+            cid = self._row_at(x, y)
+            if cid is not None:
+                skip = set(self.plan.skip)
+                if cid in skip:
+                    skip.remove(cid)
+                else:
+                    skip.add(cid)
+                self._tick(skip)
 
     def swipe(self, dx):
         if dx < 0:

@@ -58,6 +58,19 @@ class Plan(unittest.TestCase):
             self.assertEqual(p.bytes, len(newer) + len(b"fresh"))
             self.assertEqual(p.summary(), "1 new, 1 updated, 0.0 MB")
 
+    def test_unticked_are_not_downloaded(self):
+        with tempfile.TemporaryDirectory() as root:
+            cat = {"firmwares": [entry("a", b"aa"), entry("b", b"bbb"), entry("c", b"c")]}
+            put(root, "c", {"catalog_id": "c", "sha256": "0" * 64})
+            p = K.Plan(cat, root)
+            p.skip = {"b", "c"}
+            self.assertEqual([e["id"] for e in p.offered], ["a", "b", "c"])
+            self.assertEqual([e["id"] for e in p.downloads], ["a"])
+            self.assertEqual((p.picked(p.new), p.picked(p.changed), p.bytes), (1, 0, 2))
+            self.assertEqual(p.summary(), "1 new, 0.0 MB")
+            p.skip = {"a", "b", "c"}
+            self.assertEqual(p.summary(), "Nothing picked")
+
     def test_up_to_date(self):
         with tempfile.TemporaryDirectory() as root:
             data = b"pkg"

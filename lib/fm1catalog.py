@@ -241,11 +241,14 @@ def set_dates(root, e):
 class Plan:
     """What an update would do: new and updated catalogue entries to
     download, and unchanged ones whose meta.json needs the catalogue's dates
-    (`dated`). Firmwares the hub no longer lists are left alone."""
+    (`dated`). Ids in `skip` were unticked (Details on the device): they
+    stay in new and changed but aren't downloaded. Firmwares the hub no
+    longer lists are left alone."""
 
     def __init__(self, cat, root, ids=None):
         self.updated_at = cat.get("updated")
         self.new, self.changed, self.same, self.dated = [], [], [], []
+        self.skip = set()
         wanted = entries(cat, ids)
         for e in wanted:
             if matches(root, e):
@@ -258,8 +261,17 @@ class Plan:
                 self.new.append(e)
 
     @property
-    def downloads(self):
+    def offered(self):
+        """Everything the hub has that the card lacks, ticked or not."""
         return self.new + self.changed
+
+    @property
+    def downloads(self):
+        return [e for e in self.new + self.changed if e["id"] not in self.skip]
+
+    def picked(self, which):
+        """How many of `which` (new or changed) are ticked."""
+        return sum(1 for e in which if e["id"] not in self.skip)
 
     @property
     def bytes(self):
@@ -268,11 +280,11 @@ class Plan:
     def summary(self):
         """'12 new, 3 updated, 8.1 MB', or 'Up to date'."""
         parts = []
-        for n, what in ((len(self.new), "new"), (len(self.changed), "updated")):
+        for n, what in ((self.picked(self.new), "new"), (self.picked(self.changed), "updated")):
             if n:
                 parts.append("%d %s" % (n, what))
         if not parts:
-            return "Up to date"
+            return "Nothing picked" if self.offered else "Up to date"
         if self.bytes:
             parts.append("%.1f MB" % (self.bytes / 1e6))
         return ", ".join(parts)
