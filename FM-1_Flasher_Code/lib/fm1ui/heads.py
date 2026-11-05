@@ -108,9 +108,9 @@ def advice(app, entry):
     if now and now[0]:  # it runs a firmware with M-VAVE's loader: the head is its own
         head, sure, via = now[1], True, run_slug
     if takes == "official" and not target[0]:
-        why = "%s will refuse it: it installs only firmwares packaged like V15." % running
+        refuse = "%s will refuse it: it installs only firmwares packaged like V15" % running
     elif takes in ("head", "official") and target[0] and head is not None and head != target[1]:
-        why = "%s will %srefuse it: the FM-1's start-up code differs." % (
+        refuse = "%s will %srefuse it: the FM-1's start-up code differs" % (
             running, "" if sure else "probably ")
     else:
         return None
@@ -122,5 +122,5 @@ def advice(app, entry):
             bridge = app.entry(s).name
             break
     if bridge:
-        return "Install %s first, then %s. %s" % (bridge, entry.name, why)
-    return "%s Install the firmware that last changed it first." % why
+        return "Install %s first, then %s, otherwise %s." % (bridge, entry.name, refuse)
+    return "%s. Install the firmware that last changed it first." % (refuse[0].upper() + refuse[1:])

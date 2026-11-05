@@ -205,13 +205,13 @@ class Heads(unittest.TestCase):
 
     def test_felucca_firmware_refuses_another_head(self):
         msg = self.advice("FM-1_900", "stock-v15", {"head": self.AMEN, "slug": "amenity"})
-        self.assertTrue(msg.startswith("Install Amenity first, then M-VAVE V15."), msg)
+        self.assertTrue(msg.startswith("Install Amenity first, then M-VAVE V15, otherwise SLOOP will refuse it"), msg)
         self.assertIn("SLOOP will refuse", msg)
 
     def test_no_record_means_the_factory_head(self):
         self.assertIsNone(self.advice("FM-1_900", "stock-v15"))
         msg = self.advice("FM-1_900", "amenity")
-        self.assertTrue(msg.startswith("Install M-VAVE V15 first, then Amenity."), msg)
+        self.assertTrue(msg.startswith("Install M-VAVE V15 first, then Amenity, otherwise"), msg)
         self.assertIn("probably", msg)
 
     def test_no_warning_when_it_installs(self):
@@ -222,10 +222,10 @@ class Heads(unittest.TestCase):
 
     def test_bubba_takes_only_firmwares_built_on_v15(self):
         msg = self.advice("FM-1_003", "sloop")
-        self.assertTrue(msg.startswith("Install M-VAVE V15 first, then SLOOP."), msg)
+        self.assertTrue(msg.startswith("Install M-VAVE V15 first, then SLOOP, otherwise Bubba Machine will refuse it"), msg)
         self.assertIn("only firmwares packaged like V15", msg)
         msg = self.advice("FM-1_003", "amenity")  # M-VAVE's loader, but another head
-        self.assertTrue(msg.startswith("Install M-VAVE V15 first, then Amenity."), msg)
+        self.assertTrue(msg.startswith("Install M-VAVE V15 first, then Amenity, otherwise"), msg)
         self.assertIsNone(self.advice("FM-1_003", "stock-v15"))
 
     def test_state_keeps_the_head(self):
