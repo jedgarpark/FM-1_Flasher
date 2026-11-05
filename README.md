@@ -1,5 +1,7 @@
 # FM-1 Flasher
 
+> **This project has moved** to the Adafruit Learning System Guides repo: **[adafruit/Adafruit_Learning_System_Guides/FM-1_Flasher](https://github.com/adafruit/Adafruit_Learning_System_Guides/tree/main/FM-1_Flasher)** (5 November 2026). This repo is archived and read-only: it keeps the history up to the move, its pull requests, the `v1-feather-final` tag and the `firmware-20261102` release.
+
 A portable CircuitPython device that installs alt firmwares on the M-VAVE FM-1, with no computer needed. It keeps the firmwares on a microSD card, downloads new ones from the [FM-1 Firmware Hub](https://thefirmwarehub.com/) over WiFi, and installs them over USB MIDI SysEx. Plug the FM-1 into the flasher, pick a firmware on the touchscreen, and tap Install.
 
 ## Hardware
