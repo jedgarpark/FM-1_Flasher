@@ -228,14 +228,42 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       a header battery icon that turns red below ~3.5 V, and a
       confirmation before an install below ~3.4 V.
 - [ ] Soak tests across many firmwares, a Learn Guide section, a release.
-      Seen so far (4 November 2026): Duell (FM-1_901) twice stopped asking
-      for data at ~9% while staging Amenity's loader ("device stopped
-      requesting data"; nothing written, Duell still boots). The same install
-      then worked, as did Duell → SLOOP, → Clatter Pocket and → Amenity, each
-      right after Duell had been installed; both failures were on a Duell
-      that had been on the FM-1 a while. Staging an M-VAVE-loader package
-      (Amenity, Clatter, Bubba) from Duell takes ~8 s, not ~6. Watch for it;
-      a retry, a power cycle or going via V15 gets past it.
+      Explained (4 November 2026): some installs stop during staging
+      ("device stopped requesting data" after 4 requests; nothing written)
+      because of the FM-1's flash "head". The four packages with M-VAVE's own
+      loader (V15, Bubba, Amenity, Clatter; the hub's `"loader": "mvave"`)
+      rewrite the first 16 KiB of flash, and carry one of two heads: V15's
+      (V15, Bubba) or Amenity's (Amenity, Clatter). Felucca-based firmwares
+      (SLOOP: `ota_stage()` in its `firmware/src/ota.c` returns -5, "update
+      failed -5" on its screen; ZP12 and Duell behave the same) refuse to stage
+      such a package unless its head equals the one on the FM-1. Firmwares
+      built on V15 (V15, Bubba, Amenity, Clatter) don't check. So: Felucca-loader
+      firmwares (149 of 152) install from anything; an M-VAVE-loader one
+      installs from V15 or another of the four, and from a Felucca-based
+      firmware only if the last of the four installed shares its head. Stuck:
+      install the last of the four you had, then go on from it. Confirmed on
+      the hub's web installer, step by step (V15 → SLOOP → V15 → Clatter →
+      SLOOP → V15 refused → Amenity → V15 → SLOOP → Bubba), and it explains the
+      Duell → Amenity and ZP12 → V15 stalls. USB rescue (OCT−, FM-1_000) is no
+      way round. The hub's installer also loses a firmware whose USB name is
+      "FM1 Community" (Clatter) after installing it: its port list has "fm-1".
+- [x] The confirm screen warns when the running firmware will refuse an
+      install because of the head, and names the way round first ("Install
+      Amenity first, then M-VAVE V15. SLOOP will refuse it: the FM-1's start-up
+      code differs."); Install stays available. `fm1ui.heads`: each package's
+      loader (M-VAVE's own is known by its header CRCs and length, as SLOOP
+      knows it: `fm1proto.official_loader`) and head CRC (`flash_head`), read
+      once per version; the FM-1's head is the one the last M-VAVE-loader
+      install wrote (kept in the state as `head`), or V15's without a record
+      ("probably"); while a firmware with M-VAVE's loader runs, its own.
+      Bubba Machine (FM-1_003) has an updater of its own, stricter still: it
+      takes only packages with M-VAVE's loader and the FM-1's head (its
+      `hal/fm1/fm1_update.c`: -5, -7), so Bubba → SLOOP stops after 3
+      requests; the way off Bubba is V15 first. `fm1ui.heads.UPDATERS` lists
+      firmwares like it, whose updater can't be told from their package.
+- [ ] Tell zvenson (the hub's Back to official V15 and its rescue tip can't
+      get past this; the "FM1 Community" port name), and Amenity's and
+      Clatter's authors (their head differs from V15's).
 
 ## To look into
 
