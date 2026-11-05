@@ -255,7 +255,12 @@ the hub were 10 firmwares it added or updated later that day. Pictures:
       knows it: `fm1proto.official_loader`) and head CRC (`flash_head`), read
       once per version; the FM-1's head is the one the last M-VAVE-loader
       install wrote (kept in the state as `head`), or V15's without a record
-      ("probably").
+      ("probably"); while a firmware with M-VAVE's loader runs, its own.
+      Bubba Machine (FM-1_003) has an updater of its own, stricter still: it
+      takes only packages with M-VAVE's loader and the FM-1's head (its
+      `hal/fm1/fm1_update.c`: -5, -7), so Bubba → SLOOP stops after 3
+      requests; the way off Bubba is V15 first. `fm1ui.heads.UPDATERS` lists
+      firmwares like it, whose updater can't be told from their package.
 - [ ] Tell zvenson (the hub's Back to official V15 and its rescue tip can't
       get past this; the "FM1 Community" port name), and Amenity's and
       Clatter's authors (their head differs from V15's).

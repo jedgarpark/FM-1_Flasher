@@ -164,6 +164,7 @@ class Heads(unittest.TestCase):
         "clatter": ("Clatter", "FM-1_8133700", True, AMEN),
         "sloop": ("SLOOP", "FM-1_900", False, None),
         "386dx": ("386DX", "FM-1_386020000", False, None),
+        "bubba": ("Bubba Machine", "FM-1_003", True, V15),
     }
 
     def app(self, ident, head=None):
@@ -173,6 +174,7 @@ class Heads(unittest.TestCase):
         class Entry:
             def __init__(self, slug):
                 self.slug, self.name, self.version = slug, pkgs[slug][0], "1"
+                self.product = pkgs[slug][1]
 
         class Index:
             def with_product(self, product):
@@ -217,6 +219,14 @@ class Heads(unittest.TestCase):
         self.assertIsNone(self.advice("FM-1_900", "clatter", amen))  # the same head
         self.assertIsNone(self.advice("FM-1_8170001", "stock-v15", amen))  # built on V15: no check
         self.assertIsNone(self.advice("FM-1_900", "386dx", amen))  # a Felucca-style loader
+
+    def test_bubba_takes_only_firmwares_built_on_v15(self):
+        msg = self.advice("FM-1_003", "sloop")
+        self.assertTrue(msg.startswith("Install M-VAVE V15 first, then SLOOP."), msg)
+        self.assertIn("only firmwares packaged like V15", msg)
+        msg = self.advice("FM-1_003", "amenity")  # M-VAVE's loader, but another head
+        self.assertTrue(msg.startswith("Install M-VAVE V15 first, then Amenity."), msg)
+        self.assertIsNone(self.advice("FM-1_003", "stock-v15"))
 
     def test_state_keeps_the_head(self):
         path = os.path.join(tempfile.mkdtemp(), "s.json")

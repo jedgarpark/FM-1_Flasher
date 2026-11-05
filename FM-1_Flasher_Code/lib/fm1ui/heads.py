@@ -8,7 +8,9 @@ on the hub in November 2026). It writes the whole flash image, including the
 head: the first 16 KiB, the FM-1's start-up code. Firmwares built on Felucca
 (SLOOP, ZP12, Duell...) stage such a package only when its head is the one the
 FM-1 has ("update failed -5" on SLOOP), and the head is whatever the last of
-those packages wrote. Firmwares built on V15 don't check. advice() says when an
+those packages wrote. Firmwares built on V15 don't check. Bubba Machine has an
+updater of its own that takes only packages with M-VAVE's loader, and only with
+the FM-1's head (its hal/fm1/fm1_update.c: -5, -7). advice() says when an
 install will be refused and which firmware on the card gets round it: one whose
 head is the FM-1's, which the running firmware accepts and which then installs
 anything (docs/PLAN-v2.md, Phase 3).
@@ -19,6 +21,9 @@ anything (docs/PLAN-v2.md, Phase 3).
 import json
 
 STOCK_PRODUCT = "FM-1_015"
+# Firmwares whose updater can't be told from their package: (identity) -> what
+# it takes. "official": only packages with M-VAVE's loader and the FM-1's head.
+UPDATERS = {"FM-1_003": "official"}  # Bubba Machine (hal/fm1/fm1_update.c)
 _cache = {}  # (slug, version) -> (official loader, head CRC or None)
 
 
@@ -50,20 +55,24 @@ def _stock_slug(app):
 
 
 def _running(app):
-    """(name, checks the head) for the firmware the FM-1 runs; checks is None
-    when it's nothing we know."""
+    """(name, slug or None, what its updater takes) for the firmware the FM-1
+    runs: "any" (built on V15), "head" (built on Felucca: M-VAVE-loader
+    packages only with the FM-1's head), "official" (UPDATERS), or None when
+    it's nothing we know."""
     import fm1proto as P
     ident = app.identity
     known = app.installed_slug()
     slugs = [known] if known else app.index.with_product(ident)
     runs = [i for i in (info(app, s) for s in slugs) if i]
-    if any(i[0] for i in runs):
-        checks = False  # built on V15: it doesn't check the head
+    if ident in UPDATERS:
+        takes = UPDATERS[ident]
+    elif any(i[0] for i in runs):
+        takes = "any"
     elif runs or P.community_identity(ident):
-        checks = True  # built on Felucca
+        takes = "head"
     else:
-        checks = None
-    return (app.entry(known).name if known else ident), checks
+        takes = None
+    return (app.entry(known).name if known else ident), known, takes
 
 
 def _fm1_head(app):
@@ -78,27 +87,40 @@ def _fm1_head(app):
     return (stock[1] if stock else None), False, slug
 
 
+def _bridges(app, slug, head):
+    """Can firmware `slug` be the way round: M-VAVE's loader with the FM-1's
+    head (so the running firmware takes it), and an updater that then takes
+    anything?"""
+    e = app.entry(slug) if slug else None
+    i = info(app, slug)
+    return bool(e and i and i[0] and i[1] == head and e.product not in UPDATERS)
+
+
 def advice(app, entry):
     """A warning for the confirm screen, or None: the way round first, so it
     shows even when the screen has room for only part of it."""
     target = info(app, entry.slug)
-    if not app.identity or not target or not target[0]:
-        return None  # a Felucca-style loader: accepted from anything
-    running, checks = _running(app)
-    if not checks:
+    if not app.identity or not target:
         return None
+    running, run_slug, takes = _running(app)
     head, sure, via = _fm1_head(app)
-    if head is None or head == target[1]:
+    now = info(app, run_slug)
+    if now and now[0]:  # it runs a firmware with M-VAVE's loader: the head is its own
+        head, sure, via = now[1], True, run_slug
+    if takes == "official" and not target[0]:
+        why = "%s will refuse it: it installs only firmwares packaged like V15." % running
+    elif takes in ("head", "official") and target[0] and head is not None and head != target[1]:
+        why = "%s will %srefuse it: the FM-1's start-up code differs." % (
+            running, "" if sure else "probably ")
+    else:
         return None
-    # A way round: a firmware on the card whose head is the FM-1's.
+    # A way round: a firmware on the card that the running one takes (M-VAVE's
+    # loader, the FM-1's head) and that then installs anything.
     bridge = None
-    for s in (via, _stock_slug(app)):
-        i = info(app, s)
-        if s and s != entry.slug and i and i[0] and i[1] == head:
+    for s in (_stock_slug(app), via):
+        if s not in (entry.slug, run_slug) and _bridges(app, s, head):
             bridge = app.entry(s).name
             break
-    why = "%s will %srefuse it: the FM-1's start-up code differs." % (
-        running, "" if sure else "probably ")
     if bridge:
         return "Install %s first, then %s. %s" % (bridge, entry.name, why)
     return "%s Install the firmware that last changed it first." % why
